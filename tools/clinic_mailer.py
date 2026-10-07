@@ -112,6 +112,24 @@ campaign, `sweep` reads the rest, a clinic's other address or domain, a candidat
 same answer classifier. What is no advertising ("unrelated") is logged as "unmatched" in the first campaign's ledger and
 forwarded to the "unmatched" list like any such mail; advertising is only logged. The desk sweeps on every poll.
 
+Terms letter (TASK-345.12.16; Ivan, 2026-10-07): a clinic that asks for the agency's terms ("Konditionen", "Preis"; the
+classifier's pattern terms_request) gets them at once, in its own thread, by the watch itself: no plan, no announcement,
+no approval, no send window. Only a campaign whose config has a "terms" block does it ({"template": the letter, a template
+like the steps' whose "Betreff:" line holds [BETREFF_KLINIK], the clinic's subject without its reply prefix; "pdf_html": the
+HTML of the PDF with [KLINIK], [EMPFAENGER_ZEILE] and [STAND]; "stand": the date the terms are valid from}). Only an answer
+matched to a recipient and written by a person is answered (an automatic reply or an unmatched mail changes nothing, as
+before). The letter goes To the address the answer came from, Cc to the others on its To and Cc lines, with In-Reply-To
+the answer and References the whole chain, and "NDT_Konditionen_<clinic>.pdf" made for the clinic (mailer_terms,
+headless Chrome, like the announcement PDF). The names on it come from the classifier, which reads the whole thread (the answer with
+its quoted history, the From line, how our first letter greeted): the clinic's name, the writer's name and
+the greeting; mailer_terms.resolve_names keeps each only when the thread carries it and otherwise takes a fixed fallback (the
+board's clinic name, the From line's name, the general greeting), and the ledger event says which source each came from; the
+classifier never fails on them. Each recipient is answered once: the ledger's "terms_sent" event, or "terms_blocked" when the
+To address is on a suppression list or in the do-not-contact table at that moment (no letter, a loud event and a line in
+the digest); both are events of their own, never a cadence "sent", so no step logic reads them. `terms CONFIG ID MESSAGE.eml
+--clinic NAME [--person NAME] [--greeting LINE] [--preview DIR]` does it by hand for a message file with names the operator
+gives; --preview writes the letter and sends nothing.
+
 Letters: every message has a plain-text part and an HTML part rendered from the same template. A recipient's
 "html_vars" replace placeholders in the HTML part only (links); "vars" fill both. Config "signature" is appended
 to every step: its "text" to the plain part, its "image" (inline, by Content-ID) to the HTML part, or the text
@@ -154,6 +172,7 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mailer_announce  # noqa: E402
+import mailer_terms  # noqa: E402
 from mailer_doc import Doc, Table, Quote, doc_of  # noqa: E402
 
 ENV = Path(__file__).resolve().parent.parent / ".env"
@@ -207,6 +226,12 @@ def load_config(path):
             ann["notes"] = (path.parent / ann["notes"]).resolve()
     if cfg.get("desk"):
         cfg["desk"]["heartbeat"] = (path.parent / cfg["desk"]["heartbeat"]).resolve()
+    if cfg.get("terms"):
+        for k in ("template", "pdf_html", "stand"):
+            if not cfg["terms"].get(k):
+                raise MailerError(f'"terms" needs "{k}" in {path}')
+        for k in ("template", "pdf_html"):
+            cfg["terms"][k] = (path.parent / cfg["terms"][k]).resolve()
     cfg["operators"] = [a.lower() for a in cfg.get("operators", [])]       # who may command the mailing
     if cfg["operators"]:        # Ivan, 2026-10-05: the parallel operator gets no start, round or error notices, only the answers nobody has handled yet
         cfg["notify"] = [a.lower() for a in cfg["notify"]]                    # announcement, reports, halt, resumed, done
@@ -1189,6 +1214,18 @@ def fresh_text(cfg, msg):
     return "\n".join(out).strip()
 
 
+def thread_text(msg):
+    """The whole thread as the mail carries it (Ivan, 2026-10-07): the plain part (else the HTML part without tags), signature,
+    quoted lines and quoted history included, nothing cut."""
+    body = msg.get_body(preferencelist=("plain", "html"))
+    if body is None:
+        return ""
+    text = body.get_content()
+    if body.get_content_type() == "text/html":
+        text = html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>|</tr>", "\n", re.sub(r"(?is)<(script|style).*?</\1>", "", text))))
+    return text.strip()
+
+
 def automatic(msg):
     return (str(msg.get("Auto-Submitted", "no")).lower() != "no" or msg.get("X-Autoreply") or msg.get("X-Autorespond")
             or str(msg.get("Precedence", "")).lower() in ("auto_reply", "bulk", "junk") or AUTO_SUBJ.match(str(msg.get("Subject", ""))))
@@ -1574,19 +1611,28 @@ Fields, all copied from the mail, never guessed:
 - "quote": one sentence copied letter for letter from the mail that carries the pattern; "" for "other".
 - "why": one short sentence in Russian.
 
-Answer with one JSON object and nothing else: {"pattern": "unrelated|terms_request|redirect|out_of_office|opt_out|other", "addresses": [], "names": [], "phones": [], "already_ours": [], "scope": null, "quote": "", "why": ""}"""
+Three more fields, for "terms_request" only ("" for every other pattern). Read the whole "thread" (the sender's mail with its signature and its quoted history, which holds our own earlier letters), "from_name" (the name on the sender's From line), "we_greeted" (how our first letter greeted the person we wrote to) and "clinic" (the name we have for the clinic), and give always an answer, never an empty one when the thread has a name:
+- "clinic_name": the clinic's name as the thread writes it, preferably the official one the sender's own signature or letterhead gives ("Musterklinik GmbH"); else a name written elsewhere in the thread; else "clinic". Copy it letter for letter, only the name, no department, no street.
+- "person_name": the full personal name (first and last name, no title, no function, no clinic) of the person who wrote the mail and is to be answered, as its signature gives it; else the name on "from_name"; "" only when no name is anywhere.
+- "greeting": the line our answer opens with, "Sehr geehrte Frau <Nachname>" or "Sehr geehrter Herr <Nachname>" (with "Dr." or "Prof." before the name when the thread gives it). Take Frau or Herr from words in the thread (Frau, Herr, a title, a feminine or masculine function such as "Pflegedirektorin", our own greeting in "we_greeted" when it is the same person). If the thread does not say, answer "Sehr geehrte Damen und Herren"; never decide the gender from a first name.
+
+Answer with one JSON object and nothing else: {"pattern": "unrelated|terms_request|redirect|out_of_office|opt_out|other", "addresses": [], "names": [], "phones": [], "already_ours": [], "scope": null, "quote": "", "why": "", "clinic_name": "", "person_name": "", "greeting": ""}"""
 ADDRESS = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 
 
-def classify_answer(cfg, raw, frm, clinic, ours, automatic):
+def classify_answer(cfg, raw, frm, clinic, ours, automatic, rec=None):
     """The pattern of one clinic answer from the `claude` CLI: {"pattern", "addresses", "names", "phones", "already_ours",
-    "scope", "quote", "why"}. What it says it found must be in the mail (every address, the quote) or in our own data
+    "scope", "quote", "why"} and, for terms_request, "terms_names" (mailer_terms.resolve_names: clinic, person and greeting, each with its
+    source); `rec` is the recipient the answer belongs to, when known. What it says it found must be in the mail (every address, the quote) or in our own data
     (already_ours); an answer that is not raises like any classifier failure."""
     mail = email.message_from_bytes(raw, policy=email.policy.default)
     subject = " ".join(str(mail.get("Subject") or "").split())
     text = fresh_text(cfg, mail)
+    thread = thread_text(mail)
+    from_name = mailer_terms.addressee(mail)
     out, raw = ask_claude(cfg, ANSWER_SYSTEM, {"subject": subject, "text": text, "from": frm, "automatic": bool(automatic),
-                                               "clinic": clinic, "our_addresses": ours})
+                                               "clinic": clinic, "our_addresses": ours, "thread": thread, "from_name": from_name,
+                                               "we_greeted": rec["vars"].get("ANREDE") if rec else None})
     if not isinstance(out, dict) or out.get("pattern") not in ANSWER_PATTERNS:
         raise MailerError(f"classifier: unexpected answer {raw!r}")
     lists = {k: [str(v).strip() for v in out.get(k) or []] for k in ("addresses", "names", "phones", "already_ours")}
@@ -1604,7 +1650,11 @@ def classify_answer(cfg, raw, frm, clinic, ours, automatic):
     scope = out.get("scope") if out["pattern"] == "opt_out" else None
     if out["pattern"] == "opt_out" and scope not in ("address", "clinic"):
         raise MailerError(f"classifier: opt_out without a scope: {raw!r}")
-    return {"pattern": out["pattern"], **lists, "scope": scope, "quote": quote, "why": str(out.get("why") or "")}
+    ans = {"pattern": out["pattern"], **lists, "scope": scope, "quote": quote, "why": str(out.get("why") or "")}
+    if out["pattern"] == "terms_request":
+        context = "\n".join([thread, str(mail.get("From") or ""), rec["vars"].get("ANREDE", "") if rec else ""])
+        ans["terms_names"] = mailer_terms.resolve_names(out, context, clinic or "", from_name)
+    return ans
 
 
 def table_add(cfg, entry):
@@ -1629,14 +1679,15 @@ def table_add(cfg, entry):
     return True
 
 
-def act_on_answer(cfg, ans, frm, clinic, ours, subject, received, automatic, rid=None):
+def act_on_answer(cfg, ans, frm, clinic, ours, subject, received, automatic, rid=None, raw=None):
     """Do by itself what the pattern asks (Ivan, 2026-10-05) and return what it did as [{"ru": ..., ...}] for the operators.
     redirect and out_of_office with a substitute: the substitute becomes the main recipient and the sender's address is
     muted (a do-not-contact entry with replace_with, reason "redirect"); names alone count when they are one of our
     addresses. opt_out: a blocking entry for the addresses named (the sender's when none is), for every address of the
     clinic when the mail says the whole clinic. terms_request, out_of_office without a substitute and other change
     nothing. A redirect also makes the letter for the new address (redirect_letter; Ivan, 2026-10-05: the classifier
-    writes the entry and the letter goes too); nothing else sends anything."""
+    writes the entry and the letter goes too). A terms_request from a person, matched to a recipient, of a campaign with a
+    "terms" block, sends the terms letter (terms_letter; Ivan, 2026-10-07); nothing else sends anything."""
     pattern = ans["pattern"]
     entry = {"clinic": clinic or "—", "by": f"{frm}, out-of-office auto-reply" if automatic else frm,
              "date": received.strftime("%Y-%m-%d"), "why": f"Answer {subject!r} read {received:%d.%m.%Y %H:%M}: '{ans['quote']}'"}
@@ -1657,6 +1708,11 @@ def act_on_answer(cfg, ans, frm, clinic, ours, subject, received, automatic, rid
             letter = redirect_letter(cfg, rid, targets)
             out.append({"do": "redirect_letter", "recipient": letter["id"], "to": letter["to"], "ru": letter["ru"]})
         return out
+    if pattern == "terms_request":
+        if not cfg.get("terms") or not rid or automatic or raw is None:
+            return []
+        r = terms_letter(cfg, rid, raw, ans["terms_names"])
+        return [{"do": "terms_letter", "sent": r["sent"], "ru": r["ru"]}]
     if pattern == "opt_out":
         matches = ans["addresses"] or [frm]
         if ans["scope"] == "clinic":
@@ -1747,6 +1803,73 @@ def redirect_letters(cfg):
     (cfg["approvals"] / f"{bid}.pending.json").rename(cfg["approvals"] / f"{bid}.json")
     send(cfg, bid, live=True)
     return bid
+
+
+def terms_letter(cfg, rid, raw, names, preview=None, by_hand=False):
+    """Answer a clinic's request for the terms at once (Ivan, 2026-10-07): the letter of cfg["terms"] and a PDF made for the clinic,
+    To the address the answer `raw` came from, Cc the others on it, in its thread. `names` is {"clinic", "person", "greeting"}
+    as (value, source) pairs (mailer_terms.resolve_names; by hand the operator's own). Returns {"sent": bool, "ru": text for the
+    operators}. Once per recipient: a "terms_sent" or "terms_blocked" event in the ledger ends it before anything is made (by hand
+    only "terms_sent" does, so an operator can send what was blocked). The addresses go through routed() like any letter, so a
+    do-not-contact swap applies, and a To on a suppression list sends nothing and writes "terms_blocked". A failure to make or send
+    the letter is raised (the watch halts and reads the answer again on resume). With `preview` (a directory) the letter is
+    written there as preview.eml and nothing is sent or recorded."""
+    t = cfg["terms"]
+    ends = ("terms_sent",) if by_hand else ("terms_sent", "terms_blocked")
+    done = next((e for e in read_ledger(cfg) if e["event"] in ends and e["recipient_id"] == rid), None)
+    if done and not preview:
+        return {"sent": False, "ru": f"условия этому получателю уже обработаны ({done['ts'][:16]}), второго письма нет"}
+    rec = next((r for r in json.loads(cfg["recipients"].read_text()) if r["id"] == rid), None)
+    if not rec:
+        raise MailerError(f"terms letter: no recipient {rid} in {cfg['recipients']}")
+    mail = email.message_from_bytes(raw, policy=email.policy.default)
+    (clinic, _), (person, _), (greeting, _) = names["clinic"], names["person"], names["greeting"]
+    title = mailer_terms.title_of(greeting)
+    try:
+        to, cc = mailer_terms.reply_recipients(mail, cfg["sender"])
+        mid, refs = mailer_terms.thread_of(mail)
+        asked = mailer_terms.bare_subject(mail.get("Subject"))
+        stamp = now_in(cfg).strftime("%Y%m%dT%H%M%S")
+        out_dir = cfg["ledger"].parent / "terms"
+        out_dir.mkdir(exist_ok=True)
+        name = f"NDT_Konditionen_{mailer_terms.file_slug(clinic)}.pdf"
+        pdf = mailer_terms.render_pdf(mailer_terms.fill_pdf_html(t["pdf_html"].read_text(encoding="utf-8"), clinic,
+                                                                 f"{title} {person}".strip(), t["stand"]), out_dir / f"{rid}-{stamp}-{name}")
+    except mailer_terms.TermsError as e:
+        raise MailerError(f"terms letter for {rid} {rec['clinic']}: {e}")
+    letter = {"id": rid, "clinic": clinic, "vars": {"ANREDE": greeting, "BETREFF_KLINIK": asked}, "html_vars": {}}
+    sig = cfg.get("signature")
+    subject, body, html_body = render({"template": t["template"], "step": "terms"}, letter, sig)
+    data = pdf.read_bytes()
+    item = {"recipient_id": rid, "clinic": rec["clinic"], "step": "terms", "subject": subject, "body": body, "html": html_body,
+            "to": to, "cc": cc, "attachments": [{"path": str(pdf), "name": name, "sha256": hashlib.sha256(data).hexdigest()}],
+            "inline": [{"path": str(sig["image"]), "name": sig["image"].name, "cid": sig["cid"], "sha256": sig["sha256"]}]
+                      if sig and sig.get("image") else [],
+            "in_reply_to": mid, "references": refs}
+    if preview:
+        Path(preview).mkdir(parents=True, exist_ok=True)
+        (Path(preview) / "preview.eml").write_bytes(bytes(build_message(cfg, item)))
+        return {"sent": False, "ru": f"письмо с условиями для {clinic} записано в {preview}/preview.eml, не отправлено"}
+    try:
+        out = routed(cfg, item, live=True)
+    except Blocked as b:
+        append_ledger(cfg, {"event": "terms_blocked", "recipient_id": rid, "clinic": rec["clinic"], "addresses": b.addresses,
+                            "answer_message_id": mid, "names": {k: list(v) for k, v in names.items()}})
+        return {"sent": False, "ru": f"письмо с условиями не ушло: адрес {', '.join(b.addresses)} в списке блокировки (do_not_contact или список подавления)"}
+    msg = build_message(cfg, out)
+    refused = smtp_send(mailbox(cfg["sender"]), msg)
+    ev = append_ledger(cfg, {"event": "terms_sent", "recipient_id": rid, "clinic": rec["clinic"], "to": out["to"], "cc": out["cc"],
+                             **{k: out[k] for k in ("planned_to", "planned_cc") if k in out}, "message_id": msg["Message-ID"],
+                             "in_reply_to": mid, "references": refs, "answer_message_id": mid, "subject": subject,
+                             "names": {k: list(v) for k, v in names.items()}, "by_hand": by_hand,
+                             "attachment": name, "attachment_sha256": item["attachments"][0]["sha256"],
+                             "smtp_refused": {k: [v[0], v[1].decode("utf-8", "replace")] for k, v in refused.items()}})
+    print(f"terms {ev['ts'][:19]} {rid} to {', '.join(out['to'])} {ev['message_id']}")
+    if refused:
+        raise DeliveryHalt(f"HALT: SMTP refused {sorted(refused)}")
+    src = ", ".join(f"{k}: {v[1]}" for k, v in names.items())
+    return {"sent": True, "ru": f"ответил клинике условиями: письмо и PDF {name} ушли на {', '.join(out['to'])}"
+                                + (f" (копия: {', '.join(out['cc'])})" if out["cc"] else "") + f", в её цепочке; имена взяты: {src}"}
 
 
 def pattern_ru(ans):
@@ -1949,9 +2072,10 @@ def _watch(cfg, box):
         if kind in ("reply", "auto_reply", "unmatched"):       # not read: the answer stays unlogged and is read again on resume
             ours = sorted(a for a, r in by_addr.items() if r == rid) if rid else []
             clinic = next((e.get("clinic") for e in sent if e["recipient_id"] == rid), None)
+            rec = next((r for r in json.loads(cfg["recipients"].read_text()) if r["id"] == rid), None) if rid else None
             try:
-                ans = classify_answer(cfg, raw, frm, clinic, ours, kind == "auto_reply")
-                actions = act_on_answer(cfg, ans, frm, clinic, ours, " ".join(str(msg.get("Subject", "")).split()), now_in(cfg), kind == "auto_reply", rid)
+                ans = classify_answer(cfg, raw, frm, clinic, ours, kind == "auto_reply", rec)
+                actions = act_on_answer(cfg, ans, frm, clinic, ours, " ".join(str(msg.get("Subject", "")).split()), now_in(cfg), kind == "auto_reply", rid, raw)
             except MailerError as e:
                 raise MailerError(f"HALT: could not read the answer from {frm} ({str(msg.get('Subject', ''))!r}): {e}")
         to = [a for a in cfg["forward"][kind] if a not in down] if cfg["operators"] and forwarded(kind, ans) else []
@@ -2181,6 +2305,12 @@ def main(argv=None):
     p = sub.add_parser("watch"); p.add_argument("config")
     p = sub.add_parser("redirect", help="make the letter for an address a clinic's answer named (redirect_letter), by hand")
     p.add_argument("config"); p.add_argument("recipient_id"); p.add_argument("addresses", nargs="+")
+    p = sub.add_parser("terms", help="answer a clinic's message asking for the terms at once (terms_letter), by hand")
+    p.add_argument("config"); p.add_argument("recipient_id"); p.add_argument("message", help="the clinic's message as a .eml file")
+    p.add_argument("--clinic", required=True, help="the clinic's name on the PDF and the file name")
+    p.add_argument("--person", default="", help="the name after \"z. Hd.\" on the PDF")
+    p.add_argument("--greeting", default=mailer_terms.GENERAL, help='the letter\'s first line, e.g. "Sehr geehrte Frau Mustermann" (default: the general greeting)')
+    p.add_argument("--preview", metavar="DIR", help="write the letter to DIR/preview.eml, send and record nothing")
     p = sub.add_parser("status"); p.add_argument("config"); p.add_argument("--now")
     a = ap.parse_args(argv)
     cfg = load_config(a.config)
@@ -2199,6 +2329,13 @@ def main(argv=None):
             watch(cfg)
         elif a.cmd == "redirect":
             print(redirect_letter(cfg, a.recipient_id, a.addresses)["ru"])
+        elif a.cmd == "terms":
+            if not cfg.get("terms"):
+                raise MailerError(f'{a.config} has no "terms" block')
+            if not (mailer_terms.GREETING.fullmatch(a.greeting) or a.greeting == mailer_terms.GENERAL):
+                raise MailerError(f'--greeting must be "{mailer_terms.GENERAL}", "Sehr geehrte Frau <name>" or "Sehr geehrter Herr <name>"')
+            names = {"clinic": (a.clinic, "operator"), "person": (a.person, "operator"), "greeting": (a.greeting, "operator")}
+            print(terms_letter(cfg, a.recipient_id, Path(a.message).read_bytes(), names, a.preview, by_hand=True)["ru"])
         else:
             status(cfg, now)
     except MailerError as e:

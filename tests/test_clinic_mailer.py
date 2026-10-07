@@ -1456,3 +1456,189 @@ def test_an_opt_out_from_a_sender_we_never_wrote_to_blocks_the_addresses_it_name
     reader.says("streichen", pattern="opt_out", addresses=["pd@a.example"], scope="address", quote="Bitte streichen Sie pd@a.example aus Ihrem Verteiler.")
     (ev,) = M.sweep([scfg])
     assert ev["kind"] == "unmatched" and ev["actions"][0]["do"] == "opt_out" and [r["match"] for r in table(scfg)] == ["pd@a.example"]
+
+
+# ---------- terms letter (TASK-345.12.16) ----------
+
+TERMS_LETTER = "Betreff: AW: [BETREFF_KLINIK]\n\n[ANREDE],\n\ngerne unsere Konditionen.\n\nMit freundlichen Grüßen\n"
+TERMS_HTML = "<html><body><h1>[KLINIK]</h1>[EMPFAENGER_ZEILE]<p>Stand [STAND]</p></body></html>"
+ASKED = "Sehr geehrte Damen und Herren,\n\nschicken Sie mir bitte Ihre Konditionen.\n\nAnna Berger\nStellvertretende Pflegedirektorin\nKlinik A GmbH, Pflegedirektion\n"
+BERGER = '"Berger, Anna (Klinik A)" <anna.berger@klinikverbund.example>'
+NAMES = {"clinic_name": "Klinik A GmbH", "person_name": "Anna Berger", "greeting": "Sehr geehrte Frau Berger"}
+
+
+@pytest.fixture
+def tcfg(scfg, monkeypatch, reader):
+    """A scheduled campaign with a "terms" block, the PDF printer a stub that records the HTML it was given, and a classifier that
+    reads "Konditionen" as terms_request and names the clinic, the writer and the greeting as NAMES."""
+    d = scfg["ledger"].parent
+    (d / "terms.txt").write_text(TERMS_LETTER)
+    (d / "terms.html").write_text(TERMS_HTML)
+    scfg["terms"] = {"template": d / "terms.txt", "pdf_html": d / "terms.html", "stand": "06.10.2026"}
+    scfg["_pdfs"] = made = []
+
+    def fake_render(html_text, out):
+        made.append(html_text)
+        Path(out).write_bytes(b"%PDF-1.4 stub")
+        return Path(out)
+    monkeypatch.setattr(M.mailer_terms, "render_pdf", fake_render)
+    reader.says("Konditionen", pattern="terms_request", quote="schicken Sie mir bitte Ihre Konditionen.", **NAMES)
+    return scfg
+
+
+def terms_world(tcfg, monkeypatch, to=("anna.berger@klinikverbund.example",)):
+    return answers_world(tcfg, monkeypatch, list(to), [], "Klinik A")
+
+
+def names_said(reader, **fields):
+    """The classifier names these instead of NAMES from now on."""
+    reader.rules.insert(0, ("Konditionen", {**ANSWER_OTHER, "pattern": "terms_request", "quote": "schicken Sie mir bitte Ihre Konditionen.", **fields}))
+
+
+def test_a_terms_request_gets_the_letter_and_a_pdf_made_for_the_clinic_at_once_in_its_thread(tcfg, monkeypatch):
+    w = terms_world(tcfg, monkeypatch)
+    answer(w, BERGER, ASKED)
+    (ev,) = M.watch(tcfg)
+    ((_, msg),) = w.sent
+    assert msg["To"] == "anna.berger@klinikverbund.example" and msg["Cc"] is None and msg["From"].endswith("<me@example.org>")
+    assert msg["Subject"] == "AW: Pflegekraft" and msg["In-Reply-To"] == "<r1@x>" and msg["References"] == "<m1@x> <r1@x>"
+    assert plain(msg).startswith("Sehr geehrte Frau Berger,\n\ngerne unsere Konditionen.")
+    assert "http" not in plain(msg) and "http" not in msg.get_body(("html",)).get_content()
+    (pdf,) = msg.iter_attachments()
+    assert pdf.get_filename() == "NDT_Konditionen_Klinik_A_GmbH.pdf" and pdf.get_content() == b"%PDF-1.4 stub"
+    assert tcfg["_pdfs"] == ["<html><body><h1>Klinik A GmbH</h1><div>z. Hd. Frau Anna Berger</div><p>Stand 06.10.2026</p></body></html>"]
+    (sent,) = w.events("terms_sent")
+    assert (sent["recipient_id"], sent["to"], sent["message_id"], sent["in_reply_to"], sent["attachment"]) == \
+           ("1", ["anna.berger@klinikverbund.example"], msg["Message-ID"], "<r1@x>", "NDT_Konditionen_Klinik_A_GmbH.pdf")
+    assert sent["names"] == {"clinic": ["Klinik A GmbH", "thread"], "person": ["Anna Berger", "thread"], "greeting": ["Sehr geehrte Frau Berger", "thread"]}
+    assert len(w.events("sent")) == 1                                    # the one answers_world wrote: no cadence step was added
+    assert ev["actions"][0]["do"] == "terms_letter" and ev["actions"][0]["sent"] is True and "имена взяты: clinic: thread" in ev["actions"][0]["ru"]
+
+
+def test_the_classifier_reads_the_whole_thread_and_what_our_letter_called_the_clinic(tcfg, monkeypatch, reader):
+    w = terms_world(tcfg, monkeypatch)
+    answer(w, BERGER, ASKED + "\n> Sehr geehrte Frau A, ich wollte nur kurz sicherstellen, dass meine E-Mail Sie erreicht hat.\n")
+    M.watch(tcfg)
+    asked = reader.asked[-1]
+    assert "ich wollte nur kurz sicherstellen" in asked["thread"] and "ich wollte nur kurz" not in asked["text"]
+    assert asked["from_name"] == "Anna Berger" and asked["clinic"] == "Klinik A" and asked["we_greeted"] == "Sehr geehrte Frau A"
+
+
+def test_names_the_thread_does_not_carry_are_replaced_by_fixed_fallbacks_and_the_letter_still_goes(tcfg, monkeypatch, reader):
+    w = terms_world(tcfg, monkeypatch)
+    names_said(reader, clinic_name="Zauberschule Hogwarts", person_name="Max Mustermann", greeting="Sehr geehrter Herr Mustermann")
+    answer(w, BERGER, ASKED)
+    (ev,) = M.watch(tcfg)
+    ((_, msg),) = w.sent
+    assert plain(msg).startswith("Sehr geehrte Damen und Herren,") and msg.get_body(("html",)) is not None
+    assert [a.get_filename() for a in msg.iter_attachments()] == ["NDT_Konditionen_Klinik_A.pdf"]
+    assert tcfg["_pdfs"] == ["<html><body><h1>Klinik A</h1><div>z. Hd. Anna Berger</div><p>Stand 06.10.2026</p></body></html>"]
+    assert w.events("terms_sent")[0]["names"] == {"clinic": ["Klinik A", "board"], "person": ["Anna Berger", "from-line"],
+                                                  "greeting": ["Sehr geehrte Damen und Herren", "general"]}
+    assert "clinic: board, person: from-line, greeting: general" in ev["actions"][0]["ru"]
+
+
+def test_a_classifier_that_names_nothing_does_not_fail_it_falls_back(tcfg, monkeypatch, reader):
+    w = terms_world(tcfg, monkeypatch)
+    names_said(reader)
+    answer(w, BERGER, ASKED)
+    M.watch(tcfg)
+    assert len(w.sent) == 1 and plain(w.sent[0][1]).startswith("Sehr geehrte Damen und Herren,")
+    assert w.events("terms_sent")[0]["names"]["clinic"] == ["Klinik A", "board"]
+
+
+def test_a_name_found_only_in_the_quoted_history_counts_and_a_made_up_greeting_form_does_not(tcfg, monkeypatch, reader):
+    w = terms_world(tcfg, monkeypatch)
+    names_said(reader, clinic_name="Muster Klinikverbund gGmbH", person_name="Anna Berger", greeting="Hallo Anna")
+    answer(w, BERGER, "Sehr geehrte Damen und Herren,\n\nschicken Sie mir bitte Ihre Konditionen.\n\nA. Berger\n\n> Muster Klinikverbund gGmbH, Pflegedirektion\n")
+    M.watch(tcfg)
+    assert w.events("terms_sent")[0]["names"] == {"clinic": ["Muster Klinikverbund gGmbH", "thread"], "person": ["Anna Berger", "thread"],
+                                                  "greeting": ["Sehr geehrte Damen und Herren", "general"]}
+
+
+def test_the_ledger_event_is_read_by_watch_digest_and_status_without_errors(tcfg, monkeypatch, capsys):
+    w = terms_world(tcfg, monkeypatch)
+    answer(w, BERGER, ASKED)
+    M.watch(tcfg)
+    assert M.watch(tcfg) == [] and M.digest([tcfg]) == {OPS[0]: 1, OPS[1]: 1}
+    d = _email.message_from_bytes(w.to_ops_of(OPS[0])[0][1].as_bytes(), policy=_email.policy.default)
+    assert "ответил клинике условиями" in d.get_body(("plain",)).get_content()
+    M.status(tcfg, at("2026-09-29T11:00"))
+    assert "stopped: reply" in capsys.readouterr().out
+
+
+def test_a_second_terms_request_in_the_same_thread_sends_nothing(tcfg, monkeypatch):
+    w = terms_world(tcfg, monkeypatch)
+    answer(w, BERGER, ASKED)
+    M.watch(tcfg)
+    answer(w, BERGER, ASKED, mid="<r2@x>")
+    (ev,) = M.watch(tcfg)
+    assert len(w.sent) == 1 and len(w.events("terms_sent")) == 1
+    assert ev["actions"][0]["sent"] is False and "второго письма нет" in ev["actions"][0]["ru"]
+
+
+def test_a_suppressed_address_gets_no_letter_and_a_loud_record(tcfg, monkeypatch):
+    w = terms_world(tcfg, monkeypatch)
+    tcfg["do_not_contact"].write_text(json.dumps([{"match": "anna.berger@klinikverbund.example", "clinic": "Klinik A", "by": "x",
+                                                   "date": "2026-09-28", "why": "x", "reason": "opt_out"}]))
+    answer(w, BERGER, ASKED)
+    (ev,) = M.watch(tcfg)
+    assert w.sent == [] and w.events("terms_sent") == []
+    (blocked,) = w.events("terms_blocked")
+    assert blocked["recipient_id"] == "1" and blocked["addresses"] == ["anna.berger@klinikverbund.example"]
+    assert ev["actions"][0]["sent"] is False and "в списке блокировки" in ev["actions"][0]["ru"]
+    M.digest([tcfg])
+    d = _email.message_from_bytes(w.to_ops_of(OPS[0])[0][1].as_bytes(), policy=_email.policy.default)
+    assert "письмо с условиями не ушло" in d.get_body(("plain",)).get_content()
+
+
+def test_an_automatic_reply_and_an_unmatched_mail_that_ask_for_terms_change_nothing(tcfg, monkeypatch):
+    w = terms_world(tcfg, monkeypatch)
+    answer(w, BERGER, ASKED, mid="<auto1@x>", Auto_Submitted="auto-replied")
+    stranger(w, "Personal <personal@klinikverbund.example>", ASKED, "<u1@x>")
+    evs = M.watch(tcfg)
+    assert [(e["kind"], e["actions"]) for e in evs] == [("auto_reply", []), ("unmatched", [])] and w.sent == []
+
+
+def test_the_answer_goes_to_everyone_on_the_clinics_mail_but_us(tcfg, monkeypatch):
+    w = terms_world(tcfg, monkeypatch, to=("pd1@example.org",))
+    answer(w, "Frau A <pd1@example.org>", ASKED, Cc="Kollegin <kollegin@klinikverbund.example>, me@example.org, PD1@example.org")
+    M.watch(tcfg)
+    ((_, msg),) = w.sent
+    assert msg["To"] == "pd1@example.org" and msg["Cc"] == "kollegin@klinikverbund.example"
+
+
+def test_a_pdf_that_cannot_be_made_halts_the_watch_and_the_answer_is_read_again_on_resume(tcfg, monkeypatch):
+    w = terms_world(tcfg, monkeypatch)
+    answer(w, BERGER, ASKED)
+    good = M.mailer_terms.render_pdf
+
+    def broken(html_text, out):
+        raise M.mailer_terms.TermsError("the PDF was not made (exit 1): no browser")
+    monkeypatch.setattr(M.mailer_terms, "render_pdf", broken)
+    with pytest.raises(M.MailerError, match="HALT: could not read the answer .*the PDF was not made"):
+        M.watch(tcfg)
+    assert w.sent == [] and w.events("inbound") == []
+    monkeypatch.setattr(M.mailer_terms, "render_pdf", good)
+    (ev,) = M.watch(tcfg)
+    assert len(w.sent) == 1 and ev["actions"][0]["sent"] is True
+
+
+def test_the_terms_command_previews_a_letter_and_sends_by_hand_what_the_automatic_path_blocked(tcfg, monkeypatch, tmp_path):
+    w = terms_world(tcfg, monkeypatch)
+    cfg_file = tcfg["_dir"] / "c.json"
+    conf = json.loads(cfg_file.read_text())
+    conf["terms"] = {"template": "terms.txt", "pdf_html": "terms.html", "stand": "06.10.2026"}
+    cfg_file.write_text(json.dumps(conf))
+    eml = tmp_path / "asked.eml"
+    eml.write_bytes(mail(BERGER, "AW: Pflegekraft", ASKED, at("2026-09-29T10:03:00"), "<r1@x>", In_Reply_To="<m1@x>")[2])
+    hand = ["terms", str(cfg_file), "1", str(eml), "--clinic", "Klinik A GmbH", "--person", "Anna Berger", "--greeting", "Sehr geehrte Frau Berger"]
+    assert M.main(hand + ["--preview", str(tmp_path / "p")]) == 0
+    got = _email.message_from_bytes((tmp_path / "p" / "preview.eml").read_bytes(), policy=_email.policy.default)
+    assert got["To"] == "anna.berger@klinikverbund.example" and got["In-Reply-To"] == "<r1@x>" and plain(got).startswith("Sehr geehrte Frau Berger,")
+    assert w.sent == [] and w.events("terms_sent") == []
+    M.append_ledger(tcfg, {"event": "terms_blocked", "recipient_id": "1", "clinic": "Klinik A", "addresses": ["x@y.example"]})
+    assert M.main(hand) == 0                                  # a blocked attempt does not stop an operator
+    assert len(w.sent) == 1 and w.events("terms_sent")[0]["by_hand"] is True and w.events("terms_sent")[0]["names"]["clinic"] == ["Klinik A GmbH", "operator"]
+    assert M.main(hand) == 0 and len(w.sent) == 1             # but a letter that went is never repeated
+    assert M.main(["terms", str(cfg_file), "1", str(eml), "--clinic", "K", "--greeting", "Hallo"]) == 2
