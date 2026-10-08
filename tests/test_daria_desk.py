@@ -480,6 +480,20 @@ def test_the_mailing_state_shows_a_planned_batch_that_is_not_announced_yet_and_w
     assert "Пакет w1-planned (остановлен до анонса: error, SIGTERM;" in D.mailing_state_text(desk.d)
 
 
+def test_the_mailing_state_shows_an_unannounced_one_letter_batch_that_waits_for_its_start(desk):
+    """07.10: a batch planned without --announce-at has no send_at and no round; its pending letters made every answer of
+    the desk fail with KeyError 'send_at' until the batch was sent."""
+    cfg = desk.d["campaigns"][0]["cfg"]
+    batch = json.loads((cfg["batches"] / f"{desk.b1}.json").read_text())
+    batch |= {"batch_id": "w1-classic", "items": [{k: v for k, v in it.items() if k not in ("send_at", "round")} for it in batch["items"]]}
+    for key in ("announce", "reports"):
+        batch.pop(key, None)
+    (cfg["batches"] / "w1-classic.json").write_text(json.dumps(batch))
+    text = D.mailing_state_text(desk.d)
+    assert "Пакет w1-classic (запланирован, ещё не анонсирован; одобрение оператора: нет, ждёт)" in text
+    assert "ждёт запуска" in text.split("Пакет w1-classic")[1]
+
+
 def test_the_mailing_windows_are_listed_and_read_only_for_her_sessions(tools, mailing, desk):
     mailing.sessions = {"nurse79": {"w1-fu2": ["x"]}, "dsk-mailing": {}, "somebody-else": {"secret": ["x"]}}
     wins = tools.mailing_windows()

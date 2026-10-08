@@ -997,7 +997,7 @@ def item_states(cfg, batch, ledger=None, ignore_halt=False):
         elif halt:
             out.append((it, "halted", "рассылка остановлена"))
         else:
-            out.append((it, "pending", when(it["send_at"])))
+            out.append((it, "pending", when(it["send_at"]) if "send_at" in it else "ждёт запуска"))
     return out
 
 
