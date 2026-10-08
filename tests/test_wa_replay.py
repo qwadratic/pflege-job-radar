@@ -1366,3 +1366,28 @@ def test_a_media_root_this_user_cannot_read_is_a_loud_error_not_a_skipped_file(t
     monkeypatch.setattr(RP, "resolve_path", denied)
     with pytest.raises(IH.SourceAccessError, match="permission denied"):
         RP.replay_candidate(9040, scratch_dir, capture_before=[3], media_roots=[root], sales_brain_path=db)
+
+
+def test_a_photo_stored_as_bin_is_read_with_the_mime_suffix_not_the_old_system_extension(
+        tmp_path, scratch_dir, monkeypatch):
+    # The old system stored every image as "<id>.bin"; a live image has no filename. The ".bin" must not become
+    # the vision temp file's extension (the CLI's Read tool rejects it and the photo read hangs).
+    photo = b"\xff\xd8\xff\xe0 not really a jpeg"
+    root = _media_root(tmp_path, {"c1/photo": photo})
+    atts = [{"id": 1, "storage_path": "c1/photo", "sha256": _sha(photo), "mime_type": "image/jpeg"}]
+    cand = 9041
+    rows = [
+        _row(1, cand, "inbound", "text", "2030-09-01T10:00:00+00:00", body="Hallo"),
+        _row(2, cand, "outbound", "text", "2030-09-01T10:00:05+00:00", body="Guten Tag"),
+        _row(3, cand, "inbound", "image", "2030-09-01T10:01:00+00:00", media_filename="a1b2c3.bin", attachment_id=1),
+        _row(4, cand, "outbound", "text", "2030-09-01T10:01:05+00:00", body="Danke"),
+        _row(5, cand, "inbound", "text", "2030-09-01T10:02:00+00:00", body="Wann geht es los?"),
+        _row(6, cand, "outbound", "text", "2030-09-01T10:02:05+00:00", body="Bald"),
+    ]
+    db = _make_sales_brain(tmp_path / "sb.sqlite", rows, atts)
+    readers = _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+
+    RP.replay_candidate(cand, scratch_dir, capture_before={3}, media_roots=[root], sales_brain_path=db)
+
+    assert readers.vision == [".jpg"]

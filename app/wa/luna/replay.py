@@ -329,11 +329,15 @@ def _ingest_file(conn, t, candidate_id, row, located, entry):
     if sha256 != located["sha256"]:
         raise RuntimeError(f"file of source row {row['id']} (candidate_id={candidate_id}) does not match the "
                            f"sha256 sales_brain records for it")
+    # A live image message carries no filename (api: ``media.get("filename") or None``); the old system stored
+    # every image as "<id>.bin". Handed on, that ".bin" became the vision temp file's extension, which the
+    # CLI's Read tool rejects, so the photo read hung until the timeout. Images go in as the live path sees them.
+    filename = None if row["message_type"] == "image" else row["media_filename"]
     doc_id = ST.record_document(conn, t["phone"], _wamid(candidate_id, row["id"]), None, row["message_type"],
-                                located["mime_type"], row["media_filename"], str(located["path"]), sha256, len(blob))
+                                located["mime_type"], filename, str(located["path"]), sha256, len(blob))
     conn.execute("update wa_documents set received_at=? where id=?", (row["occurred_at"], doc_id))
     conn.commit()
-    WAPI._ingest_media(conn, t, {"kind": row["message_type"], "media_filename": row["media_filename"]},
+    WAPI._ingest_media(conn, t, {"kind": row["message_type"], "media_filename": filename},
                        {"id": doc_id, "blob": blob, "mime_type": located["mime_type"]})
     ST.save_thread(conn, t)   # as the live path does, before the reply turn
     summary = t["slots"]["documents"][-1]
