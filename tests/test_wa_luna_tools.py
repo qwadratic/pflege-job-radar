@@ -401,7 +401,7 @@ def test_list_cities_with_postings_ranks_cities_and_takes_the_presets(tmp_path, 
     assert [c["city"] for c in TS.list_cities_with_postings(department="Notaufnahme")] == ["Coburg"]
     assert [c["city"] for c in TS.list_cities_with_postings(regierungsbezirk="Oberbayern")] == ["München"]
     assert TS.list_cities_with_postings(department="ITS", housing=True)[0] == {
-        "city": "München", "regierungsbezirk": "Oberbayern", "postings": 1, "clinics": 1}
+        "city": "München", "size": "big", "regierungsbezirk": "Oberbayern", "postings": 1, "clinics": 1}
 
 
 def test_count_postings_counts_rows_clinics_cities_and_the_ones_with_a_flat(tmp_path, monkeypatch):
@@ -1331,15 +1331,15 @@ def test_read_history_pages_messages_oldest_first_with_a_cursor(tmp_path, monkey
     ids = _seed_messages(_CV_PHONE, [f"msg {i}" for i in range(5)])
 
     page1 = TS.read_history(limit=2)
-    assert [m["body"] for m in page1["messages"]] == ["msg 3", "msg 4"]
+    assert [m["text"] for m in page1["messages"]] == ["msg 3", "msg 4"]
     assert page1["has_more"] is True and page1["oldest_id"] == ids[3]
 
     page2 = TS.read_history(before_id=page1["oldest_id"], limit=2)
-    assert [m["body"] for m in page2["messages"]] == ["msg 1", "msg 2"]
+    assert [m["text"] for m in page2["messages"]] == ["msg 1", "msg 2"]
     assert page2["has_more"] is True and page2["oldest_id"] == ids[1]
 
     page3 = TS.read_history(before_id=page2["oldest_id"], limit=2)
-    assert [m["body"] for m in page3["messages"]] == ["msg 0"]
+    assert [m["text"] for m in page3["messages"]] == ["msg 0"]
     assert page3["has_more"] is False
 
 
@@ -1352,7 +1352,36 @@ def test_read_history_never_returns_a_forgotten_message(tmp_path, monkeypatch):
         ST.forget_message(c, wamid)
 
     out = TS.read_history(limit=10)
-    assert [m["body"] for m in out["messages"]] == ["keep me", "keep me too"]
+    assert [m["text"] for m in out["messages"]] == ["keep me", "keep me too"]
+
+
+def test_read_history_shows_what_recent_messages_shows_for_a_message_without_text_or_an_undelivered_one(
+        tmp_path, monkeypatch):
+    """One formatter and one filter for both model views of the thread (ST.history_page/history_view): a file
+    message reads as [kind], an outbound row Meta reported failed is not there, and each entry has the
+    recent_messages shape."""
+    board(tmp_path, monkeypatch)
+    monkeypatch.setenv("WA_LUNA_PHONE", _CV_PHONE)
+    conn = ST.db()
+    try:
+        ST.record_inbound(conn, _CV_PHONE, "wab.h.1", "", kind="document", at="2030-01-01T10:00:00+00:00")
+        ST.record_outbound(conn, _CV_PHONE, "wab.h.2", "never arrived", at="2030-01-01T10:00:05+00:00")
+        ST.record_message_status(conn, _CV_PHONE, {"id": "wab.h.2", "status": "failed", "timestamp": "1"})
+        ST.record_outbound(conn, _CV_PHONE, "wab.h.3", "arrived", at="2030-01-01T10:00:10+00:00")
+    finally:
+        conn.close()
+
+    out = TS.read_history(limit=10)
+    assert [{k: v for k, v in m.items() if k != "id"} for m in out["messages"]] == [
+        {"direction": "in", "kind": "document", "text": "[document]", "at": "2030-01-01T10:00:00+00:00"},
+        {"direction": "out", "kind": "text", "text": "arrived", "at": "2030-01-01T10:00:10+00:00"}]
+    assert out["has_more"] is False and out["oldest_id"] == out["messages"][0]["id"]
+
+
+def test_read_history_tool_text_no_longer_discourages_calling_it():
+    doc = TS.read_history.__doc__
+    assert "recent_messages" in doc
+    assert "double-check" not in doc and "Never call" not in doc and "only when" not in doc.lower()
 
 
 def test_read_history_lists_document_metadata_and_skips_forgotten_ones(tmp_path, monkeypatch):
@@ -1835,3 +1864,68 @@ def test_get_posting_no_longer_advertises_a_field_the_board_never_fills(tmp_path
     assert "The board records nothing at all about shifts" in said, said
     assert "shift_night_weekend" not in TS.POSTING_DETAIL_FIELDS
     assert "shift_night_weekend" not in TS.get_posting(posting_id=1)
+
+
+# --- Ivan 2026-10-08: big city (>= 50,000 inhabitants, app/wa/luna/city_sizes.json) vs small -------------
+# Fixture board: München and Augsburg are in the table, Coburg is not (40,970).
+
+def _sized_board(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    D._snap["jobs"].append({**D._snap["jobs"][3], "posting_id": 20, "city": "Weiden", "clinic_town": "Weiden"})
+    D._snap["jobs"].append({**D._snap["jobs"][3], "posting_id": 21, "city": "Krankenhaus Barmherzige Brüder Regensburg",
+                            "clinic_town": "Regensburg"})
+
+
+def test_search_postings_size_keeps_big_or_small_cities_only(tmp_path, monkeypatch):
+    _sized_board(tmp_path, monkeypatch)
+    big = TS.search_postings(size="big")
+    assert (big["total"], sorted(r["city"] for r in big["shown"])) == (3, ["Augsburg", "München", "München"])
+    small = TS.search_postings(size="small")
+    assert small["total"] == 3 and {r["city"] for r in small["shown"]} == {
+        "Coburg", "Weiden", "Krankenhaus Barmherzige Brüder Regensburg"}
+    assert TS.search_postings()["total"] == 6, "no size = both"
+    assert TS.search_postings(city="München", size="small")["total"] == 0
+    assert [r["size"] for r in TS.search_postings(city="Coburg")["shown"]] == ["small"]
+
+
+def test_count_postings_size(tmp_path, monkeypatch):
+    _sized_board(tmp_path, monkeypatch)
+    big = TS.count_postings(size="big")
+    assert (big["postings"], big["cities"], big["filters"]) == (3, 2, {"size": "big"})
+    assert TS.count_postings(size="small")["postings"] == 3
+    assert TS.count_postings(city="Augsburg", size="big")["postings"] == 1
+
+
+def test_list_cities_with_postings_names_each_citys_size_and_filters_by_it(tmp_path, monkeypatch):
+    _sized_board(tmp_path, monkeypatch)
+    assert {c["city"]: c["size"] for c in TS.list_cities_with_postings()} == {
+        "München": "big", "Augsburg": "big", "Coburg": "small", "Weiden": "small",
+        "Krankenhaus Barmherzige Brüder Regensburg": "small"}
+    assert [c["city"] for c in TS.list_cities_with_postings(size="big")] == ["München", "Augsburg"]
+    assert {c["city"] for c in TS.list_cities_with_postings(size="small")} == {
+        "Coburg", "Weiden", "Krankenhaus Barmherzige Brüder Regensburg"}
+
+
+@pytest.mark.parametrize("tool", ["search_postings", "count_postings", "list_cities_with_postings"])
+def test_an_unknown_size_is_an_error_naming_the_allowed_values(tmp_path, monkeypatch, tool):
+    board(tmp_path, monkeypatch)
+    args = {"size": "medium", **({"city": "München"} if tool == "count_postings" else {})}
+    with pytest.raises(ToolError) as raised:
+        asyncio.run(TS.mcp.call_tool(tool, args))
+    assert not isinstance(raised.value, UnexpectedToolError)
+    assert "size 'medium' is not a city size; allowed values: big, small" in str(raised.value)
+
+
+def test_the_size_parameter_is_documented_for_the_model(tmp_path, monkeypatch):
+    board(tmp_path, monkeypatch)
+    for tool in ("search_postings", "count_postings", "list_cities_with_postings"):
+        assert "50,000" in _description(tool) and "fewer than 50,000" in _description(tool), tool
+
+
+def test_the_city_size_table_is_sourced_and_clean():
+    table = TS.CITY_SIZES
+    assert table["threshold"] == 50000 and table["source"].startswith("https://") and table["as_of"]
+    assert all(pop >= table["threshold"] for pop in table["cities"].values())
+    assert len(table["cities"]) == len({k.casefold() for k in table["cities"]})
+    for city in ("München", "Nürnberg", "Augsburg", "Regensburg", "Ingolstadt", "Würzburg", "Fürth", "Erlangen"):
+        assert city in table["cities"], city

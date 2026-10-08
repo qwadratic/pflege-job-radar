@@ -202,16 +202,15 @@ def test_a_reply_naming_a_clinic_no_tool_returned_is_rejected_loudly(small):
         GR.check_reply(["Im Klinikum München 63 ist gerade eine Stelle frei."], set())
 
 
-def test_an_invented_name_never_reaches_the_candidate_and_never_becomes_silence(small):
+def test_an_invented_name_never_reaches_the_candidate_and_the_thread_is_flagged(small):
     """TASK-375: the check used to raise straight out of turn(), so nothing was sent at all and
     catch-up re-drove the same turn into the same wording. The model gets one corrective attempt --
-    this fake keeps writing the same invented house -- and then the candidate gets the harness's own
-    holding message while the thread is flagged for a colleague. An answer plus a human, never the
-    invented name and never silence."""
+    this fake keeps writing the same invented house -- and then nothing is sent (Ivan, 2026-10-08:
+    no holding message) while the thread is flagged for a human. Never the invented name."""
     thread = {"slots": {"region": "Bayern"}, "asked": []}
     out = _out(bubbles=["Im Klinikum München 63 ist gerade eine Stelle frei."])
     d = LB.turn("gibt es was in München?", thread, client=fake_client(out))
-    assert d["bubbles"] == [P.BLOCKED_REPLY_DE] and d["action"] == "reply_blocked_escalated"
+    assert d["bubbles"] == [] and d["action"] == "reply_blocked_escalated"
     assert "Klinikum München 63" not in " ".join(d["bubbles"])
     assert d["slots"]["_escalated"] is True and "NO INVENTION" in d["slots"]["_escalate_reason"]
 
@@ -237,23 +236,78 @@ def test_the_model_is_told_which_rule_it_broke_and_its_corrected_reply_goes_out(
     assert "Klinikum München 63" in seen["harness_rejected_your_reply"], "name the offending text"
 
 
-def test_a_second_violation_hands_the_thread_to_a_human_with_an_answer_already_sent(small):
-    """Two broken replies in a row: the candidate still hears something, and the escalation reason
-    says which rule died so the colleague knows what they are picking up."""
+def test_a_second_violation_hands_the_thread_to_a_human_and_sends_nothing(small):
+    """Two broken replies in a row: nothing is sent, and the escalation reason says which rule died
+    so the colleague knows what they are picking up."""
     def reply(system, user, session_id):
         return _out(bubbles=["Hier die Übersicht: https://pflege-job-radar.de/jobs"]), session_id
 
     d = LB.turn("schicken Sie mir mal was", {"slots": {"region": "Bayern"}, "asked": []},
                 client=fake_client(reply))
-    assert d["bubbles"] == [P.BLOCKED_REPLY_DE]
+    assert d["bubbles"] == []
     assert "LINK" in d["slots"]["_escalate_reason"] and d["slots"]["_escalated"] is True
+
+
+def test_a_reply_that_keeps_breaking_a_rule_sends_no_bubble_and_flags_the_thread(small, caplog):
+    """Ivan, 2026-10-08: no holding message. After the one corrective rewrite the turn returns EMPTY bubbles,
+    the thread carries the human flag, and the failure is an ERROR log naming the rule only."""
+    calls = []
+
+    def reply(system, user, session_id):
+        calls.append(user)
+        return _out(bubbles=["Hier die Übersicht: https://pflege-job-radar.de/jobs"]), session_id
+
+    with caplog.at_level("ERROR", logger="app.wa.luna_brain"):
+        d = LB.turn("schicken Sie mir mal was", {"slots": {"region": "Bayern"}, "asked": []},
+                    client=fake_client(reply))
+    assert len(calls) == 2, "one corrective retry, then nothing"
+    assert d["bubbles"] == [] and d["buttons"] == [] and d["stopped"] is False
+    assert d["action"] == "reply_blocked_escalated"
+    assert d["slots"]["_escalated"] is True
+    assert ESC.GROUNDING_RULE_VIOLATED_TWICE in d["slots"]["_escalation_codes"]
+    [record] = [rec for rec in caplog.records if "reply blocked" in rec.getMessage()]
+    assert record.levelname == "ERROR"
+    assert "first reply broke LINK, the second attempt LINK" in record.getMessage()
+    assert "pflege-job-radar" not in record.getMessage(), "the model's bubble stays out of the log"
+
+
+@pytest.mark.parametrize("bubbles, rule", [
+    (["Im Klinikum München 63 ist gerade eine Stelle frei."], "NO INVENTION"),
+    (["Wir melden uns bei Ihnen."], "PROMISE"),
+    (["Eins.", "Zwei.", "Drei."], "STYLE"),
+])
+def test_the_log_of_a_blocked_reply_names_the_rule_that_failed(small, caplog, bubbles, rule):
+    with caplog.at_level("ERROR", logger="app.wa.luna_brain"):
+        d = LB.turn("gibt es was in München?", {"slots": {"region": "Bayern"}, "asked": []},
+                    client=fake_client(_out(bubbles=bubbles)))
+    assert d["bubbles"] == []
+    [record] = [rec for rec in caplog.records if "reply blocked" in rec.getMessage()]
+    assert f"first reply broke {rule}, the second attempt {rule}" in record.getMessage()
+    assert "Klinikum München 63" not in record.getMessage()
+
+
+def test_a_retry_that_fails_for_a_non_rule_reason_is_logged_by_its_type(small, caplog):
+    calls = []
+
+    def reply(system, user, session_id):
+        calls.append(user)
+        if len(calls) == 1:
+            return _out(bubbles=["Hier die Übersicht: https://pflege-job-radar.de/jobs"]), session_id
+        raise RuntimeError("claude -p did not answer within 552s")
+
+    with caplog.at_level("ERROR", logger="app.wa.luna_brain"):
+        d = LB.turn("schicken Sie mir mal was", {"slots": {"region": "Bayern"}, "asked": []},
+                    client=fake_client(reply))
+    assert d["bubbles"] == [] and d["slots"]["_escalated"] is True
+    [record] = [rec for rec in caplog.records if "reply blocked" in rec.getMessage()]
+    assert "first reply broke LINK, the second attempt RuntimeError" in record.getMessage()
 
 
 def test_a_reply_with_too_many_bubbles_is_a_corrective_retry_not_an_exception(small):
     """TASK-385 (F2): the bubble-count style check (MAX_BUBBLES) used to run OUTSIDE the try/except
     that protects a turn -- three bubbles raised AssertionError straight out of turn() and the
     candidate got nothing at all (F2, verification 2026-09-22, hit 1 of 7 live turns). It now shares
-    the same corrective-retry-then-holding-message contract as every other checked rule here."""
+    the same corrective-retry-then-flagged-thread contract as every other checked rule here."""
     attempts = []
 
     def reply(system, user, session_id):
@@ -270,15 +324,15 @@ def test_a_reply_with_too_many_bubbles_is_a_corrective_retry_not_an_exception(sm
     assert d["action"] == "reply_after_correction" and "_escalated" not in d["slots"]
 
 
-def test_a_persistent_bubble_count_violation_still_ends_in_an_answer_not_silence(small):
-    """Two too-many-bubble replies in a row: the candidate still gets the holding message and the
-    thread is flagged, exactly like any other rule broken twice in a row -- never a raw exception."""
+def test_a_persistent_bubble_count_violation_ends_flagged_with_nothing_sent(small):
+    """Two too-many-bubble replies in a row: nothing is sent and the thread is flagged, exactly like
+    any other rule broken twice in a row -- never a raw exception."""
     def reply(system, user, session_id):
         return _out(bubbles=["Eins.", "Zwei.", "Drei."]), session_id
 
     d = LB.turn("wie geht es weiter?", {"slots": {"region": "Bayern"}, "asked": []},
                 client=fake_client(reply))
-    assert d["bubbles"] == [P.BLOCKED_REPLY_DE]
+    assert d["bubbles"] == []
     assert d["slots"]["_escalated"] is True
     assert "bubbles" in d["slots"]["_escalate_reason"]
 
@@ -780,7 +834,6 @@ def test_the_system_prompt_states_what_the_code_now_checks():
     assert "WHAT WAS TRUE LAST TURN IS NOT EVIDENCE NOW" in system, "STALE"
     assert "Saying you do NOT have a clinic the candidate named is always allowed" in system
     assert "QUALIFICATION PATH IS A FINDING, NOT A SCRATCHPAD" in system
-    assert "http" not in P.BLOCKED_REPLY_DE, "the holding reply is a reply, not a link"
 
 
 def test_the_system_prompt_states_the_redesigned_warming_and_salary_rules():
@@ -1210,7 +1263,7 @@ def test_a_posting_the_verifier_marked_gone_cannot_be_confirmed_as_still_open(sm
     _board([j for j in D.jobs() if j["clinic_name"] != "Klinikum Augsburg 1"], monkeypatch)
     d = LB.turn("ist die Stelle noch frei?", thread,
                 client=fake_client(_out(bubbles=["Beim Klinikum Augsburg 1 ist die Stelle noch frei."])))
-    assert d["bubbles"] == [P.BLOCKED_REPLY_DE]
+    assert d["bubbles"] == []
     assert "STALE" in d["slots"]["_escalate_reason"]
 
 
@@ -1330,15 +1383,15 @@ def test_the_replay_covers_what_list_clinics_itself_returned(tmp_path, monkeypat
         "and every clinic it showed is evidence the reply may name")
 
 
-def test_a_blocked_turn_does_not_attach_consent_buttons_to_the_holding_message(small):
+def test_a_blocked_turn_attaches_no_consent_buttons(small):
     """The consent buttons belong to the message that asks for consent. A blocked turn never sent
-    that ask, so the offer is un-made: attaching the buttons to "a colleague will look at it" would
-    take a tap as consent for a question the candidate never saw, and leaving the flag set would
-    mean the NEXT ask is no longer the first one -- the buttons would never appear again."""
+    that ask, so the offer is un-made: a tap on buttons the candidate never saw would count as
+    consent, and leaving the flag set would mean the NEXT ask is no longer the first one -- the
+    buttons would never appear again."""
     out = _out(bubbles=["Im Klinikum München 63 ist eine Stelle frei, sollen wir Sie vorstellen?"],
                card_patch={"anonymous_send_offered": True})
     d = LB.turn("ja gerne", {"slots": dict(READY), "asked": []}, client=fake_client(out))
-    assert d["bubbles"] == [P.BLOCKED_REPLY_DE] and d["buttons"] == []
+    assert d["bubbles"] == [] and d["buttons"] == []
     assert not d["slots"]["anonymous_send_offered"], "the offer was not made"
 
 
@@ -1842,8 +1895,8 @@ def test_the_display_cap_still_passes_as_a_bare_exact_statement_about_what_is_sh
 ])
 def test_a_house_the_candidate_named_may_be_answered_in_any_honest_wording(small, bubble):
     """A deniable name was let through only when nicht/kein/nirgend appeared in the same sentence.
-    German says "we have nothing there" in many other ways, and those replies became the holding
-    message plus a colleague -- the audit-C failure narrowed to a token list."""
+    German says "we have nothing there" in many other ways, and those replies became a blocked
+    turn plus a flagged thread -- the audit-C failure narrowed to a token list."""
     evidence = GR.turn_evidence(LB.market_snapshot({}), [], inbound="Was ist mit dem Klinikum Coburg-West?")
     assert GR.check_reply([bubble], evidence["names"], deniable=evidence["deniable"]) == []
 
@@ -1860,7 +1913,7 @@ def test_the_same_house_still_may_not_be_offered_as_hiring(small):
 def test_a_follow_up_about_houses_already_offered_is_not_an_offer_turn(hundred):
     """COUNT and BRANCHES keyed on any two detected names, so a factual follow-up about two houses
     the candidate had already been shown had to recite a total and both branch wordings or be
-    rejected -- twice in a row that is the holding message and a colleague."""
+    rejected -- twice in a row that is a blocked turn and a flagged thread."""
     offer = LB.market_snapshot(READY)["offer"]
     named = [p["clinic"] for p in offer["positions"]][:2]
     body = (f"{named[0]} liegt im Süden, {named[1]} ist etwas kleiner. Welche möchten Sie sich "
@@ -1897,7 +1950,7 @@ def test_a_file_name_is_not_a_link(small, bubble):
 def test_a_clinic_whose_board_name_is_a_hostname_is_still_sayable(tmp_path, monkeypatch):
     """Three live board clinics ARE hostnames ("jobs.sana.de", "karriereportal.kirinus.de",
     "vitrea-gesundheit.de", 7 live postings between them). Running the link test over the raw text
-    rejected a truthful, fully grounded reply and handed the candidate the holding message."""
+    rejected a truthful, fully grounded reply and blocked the turn."""
     _board([_job(1, city="München", clinic="jobs.sana.de")], monkeypatch)
     monkeypatch.setattr(C, "SQLITE_PATH", tmp_path / "wa.sqlite")
     monkeypatch.setattr(C, "LUNA_SESSION_DIR", tmp_path / "wa_luna_sessions")
@@ -1932,7 +1985,7 @@ def test_a_posting_that_is_gone_is_stale_even_while_the_house_keeps_other_openin
                 {"phone": "+4915550001234", "slots": dict(first["slots"]), "asked": []},
                 client=fake_client(_out(bubbles=["Ja, die Stelle in Onkologie beim Klinikum Bamberg "
                                                  "ist noch frei."])))
-    assert d["bubbles"] == [P.BLOCKED_REPLY_DE] and "STALE" in d["slots"]["_escalate_reason"]
+    assert d["bubbles"] == [] and "STALE" in d["slots"]["_escalate_reason"]
 
 
 def test_a_fresh_look_up_makes_the_same_house_confirmable_again(tmp_path, monkeypatch):
@@ -2259,7 +2312,7 @@ def test_alle_bei_x_is_flagged_not_blocked_when_a_second_clinic_genuinely_matche
 def test_the_flagged_reply_reaches_the_candidate_and_marks_the_card_for_review(hundred):
     """The app/wa/luna_brain.py wiring (TASK-383, retiered 2026-09-22): a flagged (not blocked)
     exhaustive claim still reaches the candidate exactly as the model wrote it -- no corrective
-    retry, no holding message -- and the thread is marked on the FLAG tier (card._flags /
+    retry, no block -- and the thread is marked on the FLAG tier (card._flags /
     card._flag_codes), so a human can still find the suspected sentence on review, without this
     alone pulling anyone in (Ivan's predictable-escalation-list round: nothing is actually broken
     here, so it must never read as card._escalated)."""
@@ -2327,11 +2380,222 @@ def test_a_sixth_position_is_still_blocked_round_5(hundred):
 
 def test_a_non_live_posting_never_reaches_the_model_round_5(small, monkeypatch):
     """STALE: untouched by this round -- a posting the verifier marked gone is not evidence it is
-    still open; the corrected reply is the harness's own holding message, never sent to the model
-    again as if it had been accepted."""
+    still open; the reply is blocked and nothing is sent, never accepted on the second try as if
+    it had been fine."""
     thread = {"slots": {"region": "Bayern", LB.GROUNDED_KEY: ["Klinikum Augsburg 1"]}, "asked": []}
     _board([j for j in D.jobs() if j["clinic_name"] != "Klinikum Augsburg 1"], monkeypatch)
     d = LB.turn("ist die Stelle noch frei?", thread,
                 client=fake_client(_out(bubbles=["Beim Klinikum Augsburg 1 ist die Stelle noch frei."])))
-    assert d["bubbles"] == [P.BLOCKED_REPLY_DE]
+    assert d["bubbles"] == []
     assert "STALE" in d["slots"]["_escalate_reason"]
+
+
+# --- PROMISE (Ivan, 2026-10-07): no hand-off nobody keeps ---------------------------------------------
+# The model must never tell a candidate that a colleague, manager, team or "we" will call, get in touch,
+# look at it, check it, take care of it or forward it: nothing here does any of that, so she would wait
+# for nothing. Ivan asked for a regex on the text (grounding.PROMISE_RE) -- German first, plain Russian and
+# English too because replies follow the candidate's language. The sentences below are invented.
+
+PROMISE_HITS = [
+    # German
+    "Ein Kollege meldet sich bei Ihnen.",
+    "Eine Kollegin schaut sich das an und meldet sich.",
+    "Unser Team prüft das und meldet sich bei Ihnen.",
+    "Wir melden uns bei Ihnen.",
+    "Wir melden uns schnellstmöglich mit mehr Informationen.",
+    "Ich melde mich, sobald ich mehr weiß.",
+    "Dann melden wir uns bei Ihnen.",
+    "Unser Manager wird sich bei Ihnen melden.",
+    "Ein Mitarbeiter wird sich zeitnah bei Ihnen melden.",
+    "Ein Mitarbeiter unseres Hauses meldet sich dazu.",
+    "Dann meldet sich ein Kollege bei Ihnen.",
+    "Die Kollegen rufen Sie morgen an.",
+    "Ein Kollege ruft Sie morgen an.",
+    "Wir rufen Sie an.",
+    "Ich rufe Sie morgen zurück.",
+    "Wir werden Sie anrufen.",
+    "Unsere Managerin wird Sie zurückrufen.",
+    "Sie erhalten einen Rückruf.",
+    "Wir schauen uns das an.",
+    "Wir prüfen das und kommen auf Sie zurück.",
+    "Wir prüfen Ihre Unterlagen in Ruhe.",
+    "Wir kümmern uns darum.",
+    "Mein Team kümmert sich darum.",
+    "Ein Berater prüft Ihre Unterlagen.",
+    "Das wird ein Kollege für Sie prüfen.",
+    "Jemand aus dem Team meldet sich.",
+    "Wir kontaktieren Sie, sobald wir mehr wissen.",
+    "Ich gebe das an einen Kollegen weiter.",
+    "Das gebe ich an die Kollegen weiter.",
+    "Ich leite Ihre Frage an unser Team weiter.",
+    "Ein Kollege leitet Ihre Anfrage weiter.",
+    "Wir geben Ihnen Bescheid, sobald es etwas Neues gibt.",
+    "Ich sage Ihnen Bescheid.",
+    "Die Kollegen geben Ihnen Bescheid.",
+    # Russian
+    "Наш коллега свяжется с вами.",
+    "С вами свяжутся в ближайшее время.",
+    "Мы свяжемся с вами позже.",
+    "Менеджер вам позвонит.",
+    "Мы позвоним вам завтра.",
+    "Коллега посмотрит ваш вопрос и ответит.",
+    "Наша команда проверит это.",
+    "Я передам ваш вопрос коллегам.",
+    # English
+    "A colleague will call you tomorrow.",
+    "Someone from our team will get in touch.",
+    "We'll contact you as soon as we know more.",
+    "We will look into it and get back to you.",
+    "Our manager will check this for you.",
+    "I'll get back to you shortly.",
+    "A colleague will take care of it.",
+    "I will pass it on to a colleague.",
+    "Our team will follow up with you.",
+    "We’ll take care of that.",
+    # passive / recorded shapes (Ivan, 2026-10-08): the candidate's own request, question or message "was
+    # noted / recorded / passed on" reads as "someone will handle it"
+    "Ihre Anfrage wurde notiert.",
+    "Ihr Anliegen ist vermerkt.",
+    "Ihre Frage haben wir festgehalten.",
+    "Ihre Anfrage zur Wohnung in München wurde notiert.",
+    "Ich habe Ihre Frage notiert.",
+    "Ich notiere mir Ihre Frage.",
+    "Ihre Rückfrage wurde weitergegeben.",
+    "Ihre Nachricht ist bei uns registriert.",
+    "Ihre Frage leite ich weiter.",
+    "Ich leite Ihre Frage weiter.",
+    "Ich halte Ihre Anfrage fest.",
+    "Your request has been noted.",
+    "Your question was forwarded.",
+    "I have recorded your message.",
+    "We'll pass your question on.",
+    "Ваш запрос записан.",
+    "Ваш вопрос передан.",
+    "Я зафиксировала ваше обращение.",
+    "Я передам ваш вопрос.",
+]
+
+PROMISE_NON_HITS = [
+    # the candidate gets in touch, or is asked to
+    "Sie können sich jederzeit bei uns melden.",
+    "Melden Sie sich gern, wenn Sie Fragen haben.",
+    "Schön, dass Sie sich melden.",
+    "Danke, dass Sie sich gemeldet haben.",
+    "Rufen Sie uns gern an.",
+    "Schicken Sie mir bitte Ihren Lebenslauf.",
+    "Wenn Sie mit einem Kollegen sprechen möchten, sagen Sie kurz Bescheid.",
+    "Feel free to contact us any time.",
+    "You can contact our team any time.",
+    "Свяжитесь с нами в любое время.",
+    "Пришлите, пожалуйста, ваше резюме.",
+    # kept actions: forwarding her profile or documents after consent, the bot's own lookups
+    "Mit Ihrer Einwilligung leiten wir Ihr Profil an passende Kliniken weiter.",
+    "Ihre Unterlagen werden an die Klinik weitergeleitet.",
+    "Wir leiten Ihren Lebenslauf an die Klinik weiter, sobald Sie zustimmen.",
+    "Dürfen wir Ihr anonymisiertes Profil an passende Kliniken weitergeben?",
+    "Мы передадим ваш профиль в клиники после вашего согласия.",
+    "Я посмотрю вакансии в Мюнхене.",
+    "Please send me your CV and I will forward it to the clinics you choose.",
+    "We will forward your profile to the clinics once you agree.",
+    "I will look up the postings for you.",
+    "I will check the board now.",
+    "Ich schaue mir gleich die Stellen in Augsburg an.",
+    "Ich prüfe das für Sie.",
+    "Ich melde Ihnen die Zahl gleich.",
+    "Gemeinsam schauen wir, welche Stadt passt.",
+    "Wir schauen gemeinsam, welche Stadt zu Ihnen passt.",
+    "Danke, die Freundin können wir später anschauen.",
+    # ordinary talk about people and teams, and honest not-knowing
+    "Im Team der Station arbeiten viele Kolleginnen aus dem Ausland.",
+    "Im Klinikum arbeiten Kollegen aus vielen Ländern.",
+    "Das steht bei dieser Stelle nicht dabei, das klärt die Klinik.",
+    "Zu früheren Bewerbungen habe ich hier keine Angaben.",
+    "Haben Sie schon die deutsche Urkunde?",
+    "Wie viele Personen würden in der Wohnung wohnen?",
+    # passive shapes that are NOT the promise: a FACT about the candidate (no request/question/message noun),
+    # a kept action, the candidate asked to note something, one clause per noun and verb
+    "Ich habe notiert, dass Sie in München suchen.",
+    "Notiert: München, Intensivstation.",
+    "Danke für Ihre Nachricht – ich habe München notiert.",
+    "Danke für Ihre Nachricht, ich habe München notiert.",
+    "Ihr Wunsch München ist notiert.",
+    "Ihr Profil wurde an passende Kliniken weitergeleitet.",
+    "Bitte notieren Sie sich die Nummer.",
+    "Ihre Frage zur Wohnung beantworte ich gern.",
+    "Ich frage nach, ob die Stelle noch frei ist.",
+    "I noted that you are looking in Munich.",
+    "Your message is clear, thanks.",
+    "Your CV has been forwarded to the clinics you chose.",
+    "Я записал, что вы ищете в Мюнхене.",
+    "Ваш профиль передан в клинику после вашего согласия.",
+    "Ваш вопрос понятен, отвечаю сразу.",
+]
+
+
+@pytest.mark.parametrize("bubble", PROMISE_HITS)
+def test_a_hand_off_promise_is_a_violation(small, bubble):
+    """Every shape Ivan named, in the candidate's three languages: the reply is rejected and the
+    violation says which rule and quotes what was promised."""
+    with pytest.raises(GR.ReplyRejected, match="PROMISE") as caught:
+        GR.check_reply([bubble], set())
+    assert GR.promise_in(bubble) in str(caught.value)
+
+
+@pytest.mark.parametrize("bubble", PROMISE_NON_HITS)
+def test_an_honest_sentence_is_not_a_promise(small, bubble):
+    """What must keep going out: the candidate writing to us, a forward of her own documents or
+    profile to a clinic after her consent, the bot looking something up itself, and ordinary
+    sentences that merely mention colleagues or a team."""
+    assert GR.check_reply([bubble], set()) == []
+
+
+def test_the_promise_rule_reads_every_bubble_not_only_the_first(small):
+    with pytest.raises(GR.ReplyRejected, match="PROMISE"):
+        GR.check_reply(["Danke für Ihre Antwort.", "Ein Kollege meldet sich bei Ihnen."], set())
+
+
+def test_the_promise_violation_is_written_the_way_the_other_rules_are(small):
+    """In English, names the rule and what was promised, and tells the model both halves of the
+    fix: be evasive the honest way, and lead the candidate on to the next open gate."""
+    with pytest.raises(GR.ReplyRejected) as caught:
+        GR.check_reply(["Ein Kollege meldet sich bei Ihnen."], set())
+    message = str(caught.value)
+    assert "PROMISE" in message and "'Kollege meldet'" in message
+    assert "say what we do know" in message and "never that a person will contact or review it" in message
+    assert "next open gate" in message and "requirement_scoreboard.next_objective" in message
+    assert "Offending bubble: 'Ein Kollege meldet sich bei Ihnen.'" in message
+
+
+def test_a_promise_reply_is_rejected_the_model_is_told_and_its_corrected_reply_goes_out(small):
+    """Through the brain seam: the first reply promises a call, the model gets the PROMISE violation
+    in the same session, and the rewrite -- not the promise -- is what the candidate receives. No
+    escalation: a corrected reply is an answer, not a failure."""
+    seen, attempts = {}, []
+
+    def reply(system, user, session_id):
+        attempts.append(user)
+        if len(attempts) == 1:
+            return _out(bubbles=["Dazu meldet sich ein Kollege bei Ihnen. Haben Sie schon die Urkunde?"]), session_id
+        seen.update(json.loads(user))
+        return _out(bubbles=["Dazu habe ich hier keine Angaben. Haben Sie schon die deutsche Urkunde?"]), session_id
+
+    d = LB.turn("Wie sieht es mit dem Gehalt aus?", {"slots": {"region": "Bayern"}, "asked": []},
+                client=fake_client(reply))
+    assert len(attempts) == 2
+    assert "PROMISE" in seen["harness_rejected_your_reply"]
+    assert "meldet sich ein Kollege" in seen["harness_rejected_your_reply"], "name the offending text"
+    assert "PROMISE" in seen["instruction"], "the correction instruction lists the rule"
+    assert d["bubbles"] == ["Dazu habe ich hier keine Angaben. Haben Sie schon die deutsche Urkunde?"]
+    assert d["action"] == "reply_after_correction" and "_escalated" not in d["slots"]
+
+
+def test_a_second_promise_in_a_row_ends_like_every_other_rule_broken_twice(small):
+    """Retry count and failure behaviour are the existing ones: one corrective attempt, then nothing
+    sent and a flag for a human (nothing new is invented for this rule)."""
+    def reply(system, user, session_id):
+        return _out(bubbles=["Wir melden uns bei Ihnen. Passt das?"]), session_id
+
+    d = LB.turn("Wie sieht es mit dem Gehalt aus?", {"slots": {"region": "Bayern"}, "asked": []},
+                client=fake_client(reply))
+    assert d["bubbles"] == [] and d["action"] == "reply_blocked_escalated"
+    assert d["slots"]["_escalated"] is True and "PROMISE" in d["slots"]["_escalate_reason"]

@@ -1618,12 +1618,16 @@ def test_flock_dash_e_75_semantics_match_what_the_cron_script_assumes(tmp_path):
     hardcodes), of the primitive decision 7 relies on: `flock -n -E 75 9` exits 75 on conflict and 0
     when uncontended -- exactly what tools/llm_lane_cron.sh's own rc checks assume."""
     lock_file = tmp_path / "test.lock"
-    holder = subprocess.Popen(["bash", "-c", f'exec 8>"{lock_file}"; flock 8; sleep 5'])
+    ready = tmp_path / "holder.ready"
+    # The marker is written only AFTER flock returned: the lock file itself appears at `exec 8>`, before the
+    # lock is held, and a conflict probe in that window sees an uncontended lock (flaky under a loaded gate).
+    holder = subprocess.Popen(["bash", "-c", f'exec 8>"{lock_file}"; flock 8; touch "{ready}"; sleep 5'])
     try:
-        for _ in range(50):
-            if lock_file.exists():
+        for _ in range(200):
+            if ready.exists():
                 break
             time.sleep(0.05)
+        assert ready.exists(), "the lock holder never took the lock"
         conflict = subprocess.run(
             ["bash", "-c", f'exec 9>"{lock_file}"; flock -n -E 75 9; echo $?'],
             capture_output=True, text=True, timeout=10,

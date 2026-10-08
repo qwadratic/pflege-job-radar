@@ -4,6 +4,7 @@ fake LB.turn (never the real `claude` CLI, never -m llm), the real scratch store
 Every candidate_id and timestamp below is invented -- none of them is a real sales_brain candidate or
 moment; ids live in the 9000s, dates in 2030.
 """
+import hashlib
 import importlib.util
 import json
 import pathlib
@@ -30,29 +31,38 @@ CLI = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(CLI)
 
 _COLUMNS = ("id", "candidate_id", "phone_e164", "wamid", "direction", "message_type",
-            "body", "caption", "media_filename", "occurred_at")
+            "body", "caption", "media_filename", "attachment_id", "occurred_at")
+_ATTACHMENT_COLUMNS = ("id", "storage_path", "sha256", "mime_type", "original_filename")
 
 
-def _make_sales_brain(path, rows):
+def _make_sales_brain(path, rows, attachments=()):
     """``rows``: dicts over a subset of _COLUMNS (id/candidate_id/direction/message_type/occurred_at
-    required; the rest default to None/''). -> the path, for convenience."""
+    required; the rest default to None/''). ``attachments``: dicts over _ATTACHMENT_COLUMNS. -> the path,
+    for convenience."""
     conn = sqlite3.connect(path)
     conn.execute(f"create table candidate_whatsapp_messages ({', '.join(_COLUMNS)})")
+    conn.execute(f"create table candidate_attachments ({', '.join(_ATTACHMENT_COLUMNS)})")
     for r in rows:
         conn.execute(
             f"insert into candidate_whatsapp_messages ({', '.join(_COLUMNS)}) "
             f"values ({', '.join('?' for _ in _COLUMNS)})",
             tuple(r.get(c) for c in _COLUMNS))
+    for a in attachments:
+        conn.execute(
+            f"insert into candidate_attachments ({', '.join(_ATTACHMENT_COLUMNS)}) "
+            f"values ({', '.join('?' for _ in _ATTACHMENT_COLUMNS)})",
+            tuple(a.get(c) for c in _ATTACHMENT_COLUMNS))
     conn.commit()
     conn.close()
     return str(path)
 
 
 def _row(id, candidate_id, direction, message_type, occurred_at, body=None, caption=None,
-         media_filename=None, phone_e164="+491715550000", wamid=None):
+         media_filename=None, phone_e164="+491715550000", wamid=None, attachment_id=None):
     return {"id": id, "candidate_id": candidate_id, "phone_e164": phone_e164,
             "wamid": wamid or f"wamid.src.{id}", "direction": direction, "message_type": message_type,
-            "body": body, "caption": caption, "media_filename": media_filename, "occurred_at": occurred_at}
+            "body": body, "caption": caption, "media_filename": media_filename,
+            "attachment_id": attachment_id, "occurred_at": occurred_at}
 
 
 FAKE_SHA = "0123456789abcdef0123456789abcdef01234567"
@@ -96,8 +106,11 @@ def _fake_turn(bubbles=None, action="reply_now_conversational", stopped=False, c
         calls.append({"text": text, "button_id": button_id, "client": client, "no_send": no_send,
                       "thread_phone": thread.get("phone"),
                       "session_id": (thread.get("slots") or {}).get("_session_id"),
-                      "outbound_since_last_turn": [m["text"] for m in ctx.get("outbound_since_last_turn", [])]})
+                      "slots": json.loads(json.dumps(thread.get("slots") or {})),
+                      "outbound_since_last_turn": [m["text"] for m in ctx.get("outbound_since_last_turn", [])],
+                      "recent_messages": [(m["direction"], m["text"]) for m in ctx.get("recent_messages", [])]})
         card = dict(thread.get("slots") or {})
+        card.pop("_documents_just_received", None)   # the real turn() consumes it on its own copy of the card
         card.update(card_patch or {})
         card.setdefault("_session_id", f"fake-session-{len(calls)}")
         out = {"bubbles": list(bubbles) if bubbles is not None else [f"reply #{len(calls)}"],
@@ -448,7 +461,7 @@ def test_single_message_turn_then_actual_reply_inserted_between_turns(tmp_path, 
     # AC#3 instrumentation: model/effort/git_sha on every line, timings/tokens null with a note
     # (luna_brain.turn() exposes neither)
     for line in lines:
-        assert line["model"] == C.LUNA_MODEL and line["effort"] == C.LUNA_EFFORT
+        assert line["model"] == C.LUNA_MODEL and line["effort"] == C.LUNA_EFFORT and line["locked_templates"] == C.LUNA_LOCKED_TEMPLATES
         assert line["git_sha"] == FAKE_SHA
         assert line["timings"] is None and line["tokens"] is None
         assert line["instrumentation_note"]
@@ -788,6 +801,56 @@ def test_next_turn_sees_the_real_reply_never_lunas_predicted_bubble(tmp_path, sc
     assert fake.calls[1]["outbound_since_last_turn"] == ["Die echte Antwort"]
 
 
+def test_the_tail_of_a_turn_is_the_real_earlier_messages_both_directions_never_lunas_predicted_bubble(
+        tmp_path, scratch_dir, monkeypatch):
+    db = _make_sales_brain(tmp_path / "sb.sqlite", [
+        _row(1, 9018, "inbound", "text", "2030-08-01T10:00:00+00:00", body="Hallo"),
+        _row(2, 9018, "outbound", "text", "2030-08-01T10:00:05+00:00", body="Die echte Antwort"),
+        _row(3, 9018, "inbound", "text", "2030-08-01T10:00:10+00:00", body="Danke"),
+    ])
+    fake = _fake_turn(bubbles=["Lunas vorhergesagte Antwort"])
+    monkeypatch.setattr(LB, "turn", fake)
+    RP.replay_candidate(9018, scratch_dir, sales_brain_path=db)
+
+    assert fake.calls[0]["recent_messages"] == []
+    assert fake.calls[1]["recent_messages"] == [("in", "Hallo"), ("out", "Die echte Antwort")]
+
+
+def test_a_burst_is_in_the_turn_text_and_not_repeated_in_the_tail(tmp_path, scratch_dir, monkeypatch):
+    db = _make_sales_brain(tmp_path / "sb.sqlite", [
+        _row(1, 9019, "inbound", "text", "2030-08-01T10:00:00+00:00", body="eins"),
+        _row(2, 9019, "outbound", "text", "2030-08-01T10:00:05+00:00", body="ok 1"),
+        _row(3, 9019, "inbound", "text", "2030-08-01T10:00:10+00:00", body="zwei"),
+        _row(4, 9019, "inbound", "text", "2030-08-01T10:00:12+00:00", body="drei"),
+        _row(5, 9019, "outbound", "text", "2030-08-01T10:00:20+00:00", body="ok 2"),
+    ])
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    RP.replay_candidate(9019, scratch_dir, sales_brain_path=db)
+
+    assert [c["text"] for c in fake.calls] == ["eins", "zwei\ndrei"]
+    assert fake.calls[1]["recent_messages"] == [("in", "eins"), ("out", "ok 1")]
+
+
+def test_a_chosen_turn_sees_the_ten_messages_before_it_as_a_live_thread_would(tmp_path, scratch_dir, monkeypatch):
+    rows = []
+    for i in range(1, 13):                                   # six exchanges, then the chosen turn 7
+        rows.append(_row(2 * i - 1, 9020, "inbound", "text", f"2030-08-01T10:{i:02d}:00+00:00", body=f"frage {i}"))
+        rows.append(_row(2 * i, 9020, "outbound", "text", f"2030-08-01T10:{i:02d}:30+00:00", body=f"antwort {i}"))
+    rows = rows[:12] + [_row(100, 9020, "inbound", "text", "2030-08-01T11:00:00+00:00", body="und jetzt?")]
+    db = _make_sales_brain(tmp_path / "sb.sqlite", rows)
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+
+    RP.replay_candidate(9020, scratch_dir, at_turns=[7], sales_brain_path=db)
+
+    [call] = fake.calls
+    assert call["text"] == "und jetzt?"
+    assert call["recent_messages"] == [(d, t) for i in range(2, 7) for d, t in
+                                       (("in", f"frage {i}"), ("out", f"antwort {i}"))]
+    assert len(call["recent_messages"]) == 10                # frage 1 / antwort 1 are older: read_history's
+
+
 # --- truncated (only real pending work) --------------------------------------------------------------------
 
 def test_not_truncated_when_what_is_left_after_max_turns_drives_no_turn(tmp_path, scratch_dir, monkeypatch):
@@ -943,3 +1006,461 @@ def test_main_checkout_root_from_a_linked_worktree_is_the_main_checkout(tmp_path
     _SPEC.loader.exec_module(real)   # a fresh copy: the autouse fixture patched CLI's own function
     assert real._main_checkout_root(linked).resolve() == main.resolve()
     assert real._main_checkout_root(main).resolve() == main.resolve()
+
+
+def test_at_turns_runs_only_the_chosen_turns_and_records_the_rest_as_plain_history(tmp_path, scratch_dir, monkeypatch):
+    db = _make_sales_brain(tmp_path / "sb.sqlite", [
+        _row(1, 9030, "inbound", "text", "2030-09-01T10:00:00+00:00", body="eins"),
+        _row(2, 9030, "outbound", "text", "2030-09-01T10:00:05+00:00", body="ok 1"),
+        _row(3, 9030, "inbound", "text", "2030-09-01T10:00:10+00:00", body="zwei"),
+        _row(4, 9030, "outbound", "text", "2030-09-01T10:00:15+00:00", body="ok 2"),
+        _row(5, 9030, "inbound", "text", "2030-09-01T10:00:20+00:00", body="drei"),
+        _row(6, 9030, "outbound", "text", "2030-09-01T10:00:25+00:00", body="ok 3"),
+    ])
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    result = RP.replay_candidate(9030, scratch_dir, at_turns=[2], sales_brain_path=db)
+    assert [c["text"] for c in fake.calls] == ["zwei"]                       # one model call, turn 2 only
+    assert fake.calls[0]["outbound_since_last_turn"] == ["ok 1"]             # turn 1 is history, reply row included
+    assert (result["turns_run"], result["errors"], result["truncated"]) == (2, 0, True)
+    lines = [json.loads(l) for l in open(result["jsonl_path"], encoding="utf-8")]
+    assert lines[0]["skipped_reason"] == "not_in_at_turns" and lines[0]["actual_reply"][0]["body"] == "ok 1"
+    assert lines[1]["luna"]["bubbles"] == ["reply #1"] and lines[1]["actual_reply"][0]["body"] == "ok 2"
+    assert lines[2] == {"candidate_id": 9030, "truncated": True, "turns_run": 2}
+
+    listing = RP.replay_candidate(9030, scratch_dir, at_turns=[], sales_brain_path=db)   # a listing: no model call
+    assert len(fake.calls) == 1 and listing["turns_run"] == 3
+
+    with pytest.raises(RuntimeError, match=r"at_turns \[7\] are past the last turn"):
+        RP.replay_candidate(9030, scratch_dir, at_turns=[7], sales_brain_path=db)
+    with pytest.raises(ValueError, match="exclusive"):
+        RP.replay_candidate(9030, scratch_dir, at_turns=[1], max_turns=1, sales_brain_path=db)
+
+
+# --- capture, seeds and real files (CAPTURE AND SEEDS, FILES) -----------------------------------------------------
+
+import app.cv as CV   # noqa: E402  (the classifier and the vision reader a live media message goes through)
+
+CV_BYTES = "Lebenslauf. Beispiel Person, Pflegefachkraft, 5 Jahre Erfahrung.".encode("utf-8")
+
+
+def _sha(blob):
+    return hashlib.sha256(blob).hexdigest()
+
+
+def _media_root(tmp_path, files):
+    """-> a media root holding ``files`` ({relative path: bytes})."""
+    root = tmp_path / "media"
+    for rel, blob in files.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_bytes(blob)
+    return root
+
+
+def _snapshot(root):
+    return {str(f.relative_to(root)): (f.read_bytes(), f.stat().st_mtime_ns) for f in sorted(root.rglob("*"))
+            if f.is_file()}
+
+
+class _FakeReaders:
+    """Stands in for the two model calls of the live media path: ``CV.classify_document`` and the vision reader."""
+
+    def __init__(self, monkeypatch, document_type="lebenslauf", certificate_level=None):
+        self.classified, self.vision = [], []
+        self.result = {"document_type": document_type, "certificate_level": certificate_level}
+        monkeypatch.setattr(CV, "classify_document", lambda text, client=None: (self.classified.append(text),
+                                                                                  dict(self.result))[1])
+        monkeypatch.setattr(CV, "extract_text_vision",
+                            lambda blob, suffix=".bin": (self.vision.append(suffix), "Text from a photo")[1])
+
+
+def _thread_with_file(tmp_path, cand=9040, attachments=None, rows=None):
+    """text -> reply -> document (attachment 1: a CV on the media root) -> reply -> text -> reply."""
+    root = _media_root(tmp_path, {"c1/cv.txt": CV_BYTES})
+    atts = attachments if attachments is not None else [
+        {"id": 1, "storage_path": "c1/cv.txt", "sha256": _sha(CV_BYTES), "mime_type": "text/plain"}]
+    rows = rows if rows is not None else [
+        _row(1, cand, "inbound", "text", "2030-09-01T10:00:00+00:00", body="Hallo"),
+        _row(2, cand, "outbound", "text", "2030-09-01T10:00:05+00:00", body="Guten Tag"),
+        _row(3, cand, "inbound", "document", "2030-09-01T10:01:00+00:00", media_filename="cv.txt", attachment_id=1),
+        _row(4, cand, "outbound", "text", "2030-09-01T10:01:05+00:00", body="Danke fürs CV"),
+        _row(5, cand, "inbound", "text", "2030-09-01T10:02:00+00:00", body="Wann geht es los?"),
+        _row(6, cand, "outbound", "text", "2030-09-01T10:02:05+00:00", body="Bald"),
+    ]
+    return root, _make_sales_brain(tmp_path / "sb.sqlite", rows, atts)
+
+
+def test_capture_runs_the_earlier_turns_reads_the_file_and_stops_before_the_chosen_turn(
+        tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path)
+    readers = _FakeReaders(monkeypatch)
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    before = _snapshot(root)
+
+    result = RP.replay_candidate(9040, scratch_dir, capture_before={3}, media_roots=[root], sales_brain_path=db)
+
+    # the real brain ran on turns 1 and 2 only; the document turn got the empty text a live media message gets
+    assert [c["text"] for c in fake.calls] == ["Hallo", ""]
+    assert readers.classified == [CV_BYTES.decode("utf-8")]
+    assert (result["turns_run"], result["errors"], result["truncated"]) == (3, 0, False)
+    assert (result["git_sha"], result["model"], result["effort"]) == (FAKE_SHA, C.LUNA_MODEL, C.LUNA_EFFORT)
+    assert result["locked_templates"] == C.LUNA_LOCKED_TEMPLATES
+    seed = result["seeds"][3]
+    json.dumps(seed)                                                         # JSON-serialisable as returned
+    # the card as a real thread holds it at turn 3: the file's classification and text, nothing dropped
+    assert seed["slots"]["document_type"] == "lebenslauf"
+    assert seed["slots"]["cv_text"] == CV_BYTES.decode("utf-8")
+    assert [d["document_type"] for d in seed["slots"]["documents"]] == ["lebenslauf"]
+    assert seed["slots"]["_session_id"] == "fake-session-2" and LB.LAST_TURN_KEY in seed["slots"]
+    assert "_documents_just_received" not in seed["slots"]                    # turn 2's brain consumed it
+    assert seed["asked"] == [] and seed["stopped"] is False and seed["files"] == []
+    (doc,) = seed["documents"]                                                # every column of the scratch row
+    assert (doc["document_type"], doc["text"], doc["kind"], doc["mime_type"]) == (
+        "lebenslauf", CV_BYTES.decode("utf-8"), "document", "text/plain")
+    assert doc["path"] == str(root / "c1" / "cv.txt") and doc["sha256"] == _sha(CV_BYTES)
+    assert doc["received_at"] == "2030-09-01T10:01:00+00:00" and doc["id"] == seed["slots"]["documents"][0]["id"]
+    # the walk stopped before turn 3 without running it, and the source file was only read
+    lines = [json.loads(l) for l in open(result["jsonl_path"], encoding="utf-8")]
+    assert [l.get("skipped_reason") for l in lines] == [None, None, "captured_not_run"]
+    assert lines[1]["files"][0]["status"] == "attached" and lines[1]["file_unavailable"] is False
+    assert "files" not in lines[0]
+    assert _snapshot(root) == before
+
+
+def test_capture_before_the_file_turn_holds_the_file_in_the_seed_and_gives_no_text(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path)
+    _FakeReaders(monkeypatch)
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    result = RP.replay_candidate(9040, scratch_dir, capture_before=[2], media_roots=[root], sales_brain_path=db)
+    seed = result["seeds"][2]
+    assert [c["text"] for c in fake.calls] == ["Hallo"]
+    assert [f["status"] for f in seed["files"]] == ["attached"]
+    assert seed["files"][0]["document_type"] == "lebenslauf" and seed["files"][0]["source_id"] == 3
+    # exactly the state the brain would see: the new file is flagged as just received
+    assert [d["document_type"] for d in seed["slots"]["_documents_just_received"]] == ["lebenslauf"]
+
+
+def test_seed_mode_makes_no_model_call_for_earlier_turns_applies_the_seed_and_runs_the_turn_once(
+        tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path)
+    readers = _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    seeds = RP.replay_candidate(9040, scratch_dir, capture_before=[3], media_roots=[root],
+                                sales_brain_path=db)["seeds"]
+    n_classified = len(readers.classified)
+
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    result = RP.replay_candidate(9040, scratch_dir, at_turns=[3], seeds=json.loads(json.dumps(seeds)),
+                                 sales_brain_path=db)
+    assert [c["text"] for c in fake.calls] == ["Wann geht es los?"]            # one brain call, turn 3 only
+    assert len(readers.classified) == n_classified and readers.vision == []    # no file read, no classification
+    call = fake.calls[0]
+    assert call["session_id"] is None                                           # _run_turn still cuts the session
+    assert call["slots"]["cv_text"] == CV_BYTES.decode("utf-8")                 # the card turn 2 would have left
+    assert call["slots"]["documents"][0]["document_type"] == "lebenslauf"
+    assert call["outbound_since_last_turn"] == ["Danke fürs CV"]               # the real reply row, as history
+    lines = [json.loads(l) for l in open(result["jsonl_path"], encoding="utf-8")]
+    assert [l.get("skipped_reason") for l in lines[:2]] == ["not_in_at_turns", "not_in_at_turns"]
+    assert lines[2]["luna"]["bubbles"] == ["reply #1"]
+    # the scratch store holds the seed's documents, same ids, the path pointing at the read-only source
+    conn = sqlite3.connect(result["sqlite_path"])
+    conn.row_factory = sqlite3.Row
+    rows = [dict(r) for r in conn.execute("select * from wa_documents order by id")]
+    conn.close()
+    assert rows == seeds[3]["documents"]
+    assert rows[0]["path"] == str(root / "c1" / "cv.txt")
+
+
+def test_a_prepared_point_sees_the_real_earlier_messages_as_its_tail_though_no_earlier_turn_ran(
+        tmp_path, scratch_dir, monkeypatch):
+    """The seed carries the card and the documents, never messages: the walk records every earlier real row, the
+    old system's replies included, so a prepared point sees the tail a live thread would hold there. A seed
+    prepared before recent_messages existed stays valid."""
+    root, db = _thread_with_file(tmp_path)
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    seeds = RP.replay_candidate(9040, scratch_dir, capture_before=[3], media_roots=[root],
+                                sales_brain_path=db)["seeds"]
+    assert "recent_messages" not in json.dumps(seeds)
+
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    RP.replay_candidate(9040, scratch_dir, at_turns=[3], seeds=json.loads(json.dumps(seeds)), sales_brain_path=db)
+
+    [call] = fake.calls
+    assert call["recent_messages"] == [("in", "Hallo"), ("out", "Guten Tag"), ("in", "[document].txt"),
+                                       ("out", "Danke fürs CV")]
+
+
+def test_seed_of_a_file_turn_gives_the_brain_the_live_turn_text_and_the_just_received_marker(
+        tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path)
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    seeds = RP.replay_candidate(9040, scratch_dir, capture_before=[2], media_roots=[root],
+                                sales_brain_path=db)["seeds"]
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    result = RP.replay_candidate(9040, scratch_dir, at_turns=[2], seeds=seeds, sales_brain_path=db)
+    assert [c["text"] for c in fake.calls] == [""]
+    assert [d["document_type"] for d in fake.calls[0]["slots"]["_documents_just_received"]] == ["lebenslauf"]
+    line = [json.loads(l) for l in open(result["jsonl_path"], encoding="utf-8")][1]
+    assert line["files"] == seeds[2]["files"] and line["file_unavailable"] is False
+    assert line["inbound"][0]["text"] == "[document].txt"                       # the history still shows the placeholder
+
+
+def test_seeds_of_two_turns_each_replace_the_state_the_earlier_one_set(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path)
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    seeds = RP.replay_candidate(9040, scratch_dir, capture_before=[2, 3], media_roots=[root],
+                                sales_brain_path=db)["seeds"]
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    RP.replay_candidate(9040, scratch_dir, at_turns=[2, 3], seeds=seeds, sales_brain_path=db)
+    assert [c["text"] for c in fake.calls] == ["", "Wann geht es los?"]
+    # turn 2's seed: the file just arrived; turn 3's seed replaced that state: held, no longer "just received"
+    assert [d["document_type"] for d in fake.calls[0]["slots"]["_documents_just_received"]] == ["lebenslauf"]
+    assert "_documents_just_received" not in fake.calls[1]["slots"]
+    assert fake.calls[1]["slots"]["documents"][0]["document_type"] == "lebenslauf"
+    assert fake.calls[0]["slots"].get(LB.LAST_TURN_KEY) != fake.calls[1]["slots"].get(LB.LAST_TURN_KEY)
+
+
+def test_a_turn_without_a_seed_behaves_as_before_even_next_to_a_seeded_one(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path)
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    seeds = RP.replay_candidate(9040, scratch_dir, capture_before=[3], media_roots=[root],
+                                sales_brain_path=db)["seeds"]
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    RP.replay_candidate(9040, scratch_dir, at_turns=[1, 3], seeds=seeds, sales_brain_path=db)
+    assert [c["text"] for c in fake.calls] == ["Hallo", "Wann geht es los?"]
+    assert fake.calls[0]["slots"].get("documents") in (None, [])
+
+
+def test_an_unavailable_file_keeps_the_placeholder_and_is_recorded(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path, attachments=[
+        {"id": 1, "storage_path": "gone/cv.txt", "sha256": _sha(CV_BYTES), "mime_type": "text/plain"}])
+    readers = _FakeReaders(monkeypatch)
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    result = RP.replay_candidate(9040, scratch_dir, capture_before=[3], media_roots=[root], sales_brain_path=db)
+    assert [c["text"] for c in fake.calls] == ["Hallo", "[document].txt"]       # today's placeholder behaviour
+    assert readers.classified == [] and result["seeds"][3]["documents"] == []
+    lines = [json.loads(l) for l in open(result["jsonl_path"], encoding="utf-8")]
+    assert lines[1]["file_unavailable"] is True and lines[1]["media_placeholder"] is True
+    assert lines[1]["files"] == [{"source_id": 3, "kind": "document", "status": "unavailable",
+                                  "reason": "not_on_a_readable_root", "found_via": None, "document_id": None,
+                                  "document_type": None, "certificate_level": None}]
+    seeds = RP.replay_candidate(9040, scratch_dir, capture_before=[2], media_roots=[root],
+                                sales_brain_path=db)["seeds"]
+    assert seeds[2]["files"][0]["status"] == "unavailable"                      # recorded in the seed, so in the prep
+
+
+def test_a_file_missing_on_its_own_path_is_found_through_another_row_with_the_same_sha256(
+        tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path, attachments=[
+        {"id": 1, "storage_path": "gone/cv.txt", "sha256": _sha(CV_BYTES), "mime_type": "text/plain"},
+        {"id": 2, "storage_path": "c1/cv.txt", "sha256": _sha(CV_BYTES), "mime_type": "text/plain"}])
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    seed = RP.replay_candidate(9040, scratch_dir, capture_before=[3], media_roots=[root],
+                               sales_brain_path=db)["seeds"][3]
+    assert seed["documents"][0]["path"] == str(root / "c1" / "cv.txt")
+    assert seed["slots"]["documents"][0]["document_type"] == "lebenslauf"
+
+
+def test_an_image_goes_through_the_vision_reader_and_a_row_without_attachment_is_unavailable(
+        tmp_path, scratch_dir, monkeypatch):
+    jpg = b"\xff\xd8\xff not really a jpeg"
+    root = _media_root(tmp_path, {"c1/photo.jpg": jpg})
+    db = _make_sales_brain(tmp_path / "sb.sqlite", [
+        _row(1, 9041, "inbound", "image", "2030-09-01T10:00:00+00:00", attachment_id=1, media_filename="p.jpg"),
+        _row(2, 9041, "inbound", "image", "2030-09-01T10:00:01+00:00", media_filename="q.jpg"),
+        _row(3, 9041, "outbound", "text", "2030-09-01T10:00:05+00:00", body="Danke"),
+        _row(4, 9041, "inbound", "text", "2030-09-01T10:01:00+00:00", body="Und jetzt?"),
+    ], [{"id": 1, "storage_path": "c1/photo.jpg", "sha256": _sha(jpg), "mime_type": "image/jpeg"}])
+    readers = _FakeReaders(monkeypatch, document_type="other")
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    result = RP.replay_candidate(9041, scratch_dir, capture_before=[2], media_roots=[root], sales_brain_path=db)
+    assert readers.vision == [".jpg"] and readers.classified == ["Text from a photo"]
+    # one burst of two images: the attached one adds no text, the other keeps its placeholder; both are recorded
+    assert [c["text"] for c in fake.calls] == ["[image] q.jpg"]
+    line = [json.loads(l) for l in open(result["jsonl_path"], encoding="utf-8")][0]
+    assert [(f["status"], f["reason"]) for f in line["files"]] == [("attached", None), ("unavailable", "no_attachment_row")]
+    assert line["file_unavailable"] is True and result["seeds"][2]["files"] == []
+
+
+def test_a_voice_note_is_never_read_its_old_transcript_is_the_text(tmp_path, scratch_dir, monkeypatch):
+    db = _make_sales_brain(tmp_path / "sb.sqlite", [
+        _row(1, 9042, "inbound", "audio", "2030-09-01T10:00:00+00:00", body="Ich suche Arbeit in Bayern"),
+        _row(2, 9042, "outbound", "text", "2030-09-01T10:00:05+00:00", body="Gern"),
+        _row(3, 9042, "inbound", "audio", "2030-09-01T10:01:00+00:00", attachment_id=1),
+        _row(4, 9042, "outbound", "text", "2030-09-01T10:01:05+00:00", body="Hm"),
+        _row(5, 9042, "inbound", "text", "2030-09-01T10:02:00+00:00", body="Hallo?"),
+    ], [{"id": 1, "storage_path": "v/voice.ogg", "sha256": "ab", "mime_type": "audio/ogg"}])
+    root = _media_root(tmp_path, {"v/voice.ogg": b"OggS"})
+    readers = _FakeReaders(monkeypatch)
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    result = RP.replay_candidate(9042, scratch_dir, capture_before=[3], media_roots=[root], sales_brain_path=db)
+    assert [c["text"] for c in fake.calls] == ["Ich suche Arbeit in Bayern", "[audio]"]
+    assert readers.classified == [] and readers.vision == []
+    lines = [json.loads(l) for l in open(result["jsonl_path"], encoding="utf-8")]
+    assert "files" not in lines[0]                                              # a transcript is real text
+    assert [(f["kind"], f["reason"]) for f in lines[1]["files"]] == [("audio", "voice_note_not_transcribed")]
+    assert lines[1]["file_unavailable"] is True
+
+
+def test_a_file_that_does_not_match_its_recorded_sha256_is_a_loud_error(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path, attachments=[
+        {"id": 1, "storage_path": "c1/cv.txt", "sha256": "0" * 64, "mime_type": "text/plain"}])
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    with pytest.raises(RuntimeError, match="does not match the sha256"):
+        RP.replay_candidate(9040, scratch_dir, capture_before=[3], media_roots=[root], sales_brain_path=db)
+
+
+def test_a_failing_classification_aborts_the_capture_loudly(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+
+    def boom(text, client=None):
+        raise RuntimeError("classifier down")
+    monkeypatch.setattr(CV, "classify_document", boom)
+    with pytest.raises(RuntimeError, match="classifier down"):
+        RP.replay_candidate(9040, scratch_dir, capture_before=[3], media_roots=[root], sales_brain_path=db)
+
+
+def test_a_chosen_turn_with_a_readable_file_and_no_seed_is_a_loud_error(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path)
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    with pytest.raises(RuntimeError, match="holds a readable file.*--prepare"):
+        RP.replay_candidate(9040, scratch_dir, at_turns=[2], media_roots=[root], sales_brain_path=db)
+    assert fake.calls == []
+    # without media_roots nothing is looked up: today's behaviour, placeholder and all
+    RP.replay_candidate(9040, scratch_dir, at_turns=[2], sales_brain_path=db)
+    assert [c["text"] for c in fake.calls] == ["[document].txt"]
+
+
+def test_a_chosen_turn_with_an_unreadable_file_and_no_seed_runs_on_the_placeholder_and_says_so(
+        tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path, attachments=[
+        {"id": 1, "storage_path": "gone/cv.txt", "sha256": _sha(CV_BYTES), "mime_type": "text/plain"}])
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    result = RP.replay_candidate(9040, scratch_dir, at_turns=[2], media_roots=[root], sales_brain_path=db)
+    assert [c["text"] for c in fake.calls] == ["[document].txt"]
+    line = [json.loads(l) for l in open(result["jsonl_path"], encoding="utf-8")][1]
+    assert line["file_unavailable"] is True and line["files"][0]["reason"] == "not_on_a_readable_root"
+
+
+def test_a_seed_whose_turn_the_walk_never_reaches_is_a_loud_error(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path)
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    seeds = RP.replay_candidate(9040, scratch_dir, capture_before=[3], media_roots=[root],
+                                sales_brain_path=db)["seeds"]
+    with pytest.raises(RuntimeError, match=r"at_turns \[9\] are past the last turn"):
+        RP.replay_candidate(9040, scratch_dir, at_turns=[3, 9], seeds={3: seeds[3], 9: seeds[3]},
+                            sales_brain_path=db)
+    with pytest.raises(RuntimeError, match=r"capture_before \[9\] are past the last turn"):
+        RP.replay_candidate(9040, scratch_dir, capture_before=[9], media_roots=[root], sales_brain_path=db)
+
+
+def test_a_stale_seed_is_refused_not_applied(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path)
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    seeds = RP.replay_candidate(9040, scratch_dir, capture_before=[2], media_roots=[root],
+                                sales_brain_path=db)["seeds"]
+    seeds[2]["files"] = []                                                     # the turn holds a file the seed does not list
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    with pytest.raises(RuntimeError, match="seed is stale"):
+        RP.replay_candidate(9040, scratch_dir, at_turns=[2], seeds=seeds, sales_brain_path=db)
+    assert fake.calls == []
+
+
+def test_capture_and_seed_arguments_are_checked_up_front(tmp_path, scratch_dir):
+    db = _make_sales_brain(tmp_path / "sb.sqlite", [_row(1, 9043, "inbound", "text", "2030-09-01T10:00:00+00:00",
+                                                         body="Hallo")])
+    root = tmp_path / "media"
+    with pytest.raises(ValueError, match="needs media_roots"):
+        RP.replay_candidate(9043, scratch_dir, capture_before=[1], sales_brain_path=db)
+    with pytest.raises(ValueError, match="exclusive"):
+        RP.replay_candidate(9043, scratch_dir, capture_before=[1], at_turns=[1], media_roots=[root],
+                            sales_brain_path=db)
+    with pytest.raises(ValueError, match="capture_before is empty"):
+        RP.replay_candidate(9043, scratch_dir, capture_before=[], media_roots=[root], sales_brain_path=db)
+    with pytest.raises(ValueError, match="not in at_turns"):
+        RP.replay_candidate(9043, scratch_dir, at_turns=[1], seeds={2: {}}, sales_brain_path=db)
+
+
+def test_capture_of_the_first_turn_needs_no_earlier_turn_and_runs_no_brain(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_file(tmp_path)
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    seed = RP.replay_candidate(9040, scratch_dir, capture_before=[1], media_roots=[root],
+                               sales_brain_path=db)["seeds"][1]
+    assert fake.calls == [] and seed["slots"] == {} and seed["documents"] == [] and seed["files"] == []
+
+
+def test_attachment_lookups_open_sales_brain_read_only_and_read_only_the_named_columns(tmp_path, monkeypatch):
+    db = _make_sales_brain(tmp_path / "sb.sqlite", [], [
+        {"id": 1, "storage_path": "a/b.pdf", "sha256": "ab", "mime_type": "application/pdf",
+         "original_filename": "Erika_Beispiel.pdf"},
+        {"id": 2, "storage_path": "c/d.pdf", "sha256": "ab", "mime_type": "application/pdf"}])
+    opened, real_connect = [], sqlite3.connect
+    monkeypatch.setattr(sqlite3, "connect", lambda target, *a, **kw: (opened.append(target),
+                                                                       real_connect(target, *a, **kw))[1])
+    assert RP.fetch_attachment(1, db) == {"id": 1, "storage_path": "a/b.pdf", "sha256": "ab",
+                                          "mime_type": "application/pdf"}      # no original_filename
+    assert RP.fetch_attachment(3, db) is None
+    assert [a["id"] for a in RP.fetch_attachments_by_sha("ab", db, exclude_id=1)] == [2]
+    assert RP.fetch_attachments_by_sha("ab", db, exclude_id=2)[0]["id"] == 1
+    assert RP.fetch_rows(9999, db) == []
+    assert len(opened) == 5 and all(t.startswith("file:") and t.endswith("?mode=ro") for t in opened)
+
+
+def test_a_media_root_this_user_cannot_read_is_a_loud_error_not_a_skipped_file(tmp_path, scratch_dir, monkeypatch):
+    from app.wa.luna import import_history as IH
+    root, db = _thread_with_file(tmp_path)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+
+    def denied(value, roots):
+        raise IH.SourceAccessError("cannot read document: permission denied")
+    monkeypatch.setattr(RP, "resolve_path", denied)
+    with pytest.raises(IH.SourceAccessError, match="permission denied"):
+        RP.replay_candidate(9040, scratch_dir, capture_before=[3], media_roots=[root], sales_brain_path=db)
+
+
+def test_a_photo_stored_as_bin_is_read_with_the_mime_suffix_not_the_old_system_extension(
+        tmp_path, scratch_dir, monkeypatch):
+    # The old system stored every image as "<id>.bin"; a live image has no filename. The ".bin" must not become
+    # the vision temp file's extension (the CLI's Read tool rejects it and the photo read hangs).
+    photo = b"\xff\xd8\xff\xe0 not really a jpeg"
+    root = _media_root(tmp_path, {"c1/photo": photo})
+    atts = [{"id": 1, "storage_path": "c1/photo", "sha256": _sha(photo), "mime_type": "image/jpeg"}]
+    cand = 9041
+    rows = [
+        _row(1, cand, "inbound", "text", "2030-09-01T10:00:00+00:00", body="Hallo"),
+        _row(2, cand, "outbound", "text", "2030-09-01T10:00:05+00:00", body="Guten Tag"),
+        _row(3, cand, "inbound", "image", "2030-09-01T10:01:00+00:00", media_filename="a1b2c3.bin", attachment_id=1),
+        _row(4, cand, "outbound", "text", "2030-09-01T10:01:05+00:00", body="Danke"),
+        _row(5, cand, "inbound", "text", "2030-09-01T10:02:00+00:00", body="Wann geht es los?"),
+        _row(6, cand, "outbound", "text", "2030-09-01T10:02:05+00:00", body="Bald"),
+    ]
+    db = _make_sales_brain(tmp_path / "sb.sqlite", rows, atts)
+    readers = _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+
+    RP.replay_candidate(cand, scratch_dir, capture_before={3}, media_roots=[root], sales_brain_path=db)
+
+    assert readers.vision == [".jpg"]

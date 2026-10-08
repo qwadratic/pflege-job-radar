@@ -156,6 +156,16 @@ LUNA_MODEL = os.environ.get("WA_LUNA_MODEL", "claude-opus-5-5").strip() or "clau
 # explicit override of TASK-287's "high". Accepted values are low/medium/high/xhigh/max
 # (`claude -p --help`).
 LUNA_EFFORT = os.environ.get("WA_LUNA_EFFORT", "high").strip() or "high"
+# A/B switch for the Luna brain's fixed (locked) replies (Ivan, 2026-10-08; hypothesis: asking about the
+# city and answering natively beats a template, templates only in exceptional cases).
+#   all         today's behaviour: the harness sends OUT_OF_SCOPE_REGION_DE for a named Bundesland and
+#               REJECT_BODY_DE for a "not placeable" verdict, in place of the model's own bubbles.
+#   exceptions  the hypothesis arm: those two stay with the model (it runs, handles OFF REGION with the
+#               city tool, and words its own refusal). Every other locked text stays locked in both arms.
+# Read once at import; anything else stops the process, same as WA_REPLY_SCOPE above.
+LUNA_LOCKED_TEMPLATES = os.environ.get("WA_LUNA_LOCKED_TEMPLATES", "all").strip().lower()
+if LUNA_LOCKED_TEMPLATES not in ("all", "exceptions"):
+    raise RuntimeError(f"WA_LUNA_LOCKED_TEMPLATES={LUNA_LOCKED_TEMPLATES!r} is not 'all' or 'exceptions'")
 # The luna brain calls the `claude` CLI (subprocess), not the Anthropic Python SDK -- it rides
 # whatever auth that CLI already has on this host (OAuth session, API key, or apiKeyHelper),
 # so this harness needs no ANTHROPIC_API_KEY of its own. Override the binary name/path only if

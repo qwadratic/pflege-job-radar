@@ -1,0 +1,9 @@
+{
+  "id": "example",
+  "candidate_id": 9001,
+  "at_turns": [2, 3],
+  "covers": {"archetype": "middle", "scenario": "example_synthetic"},
+  "region": "bavaria",
+  "edits": [{"what": "city named by the candidate", "from": "Bremen", "to": "Augsburg"}],
+  "note": "Synthetic. The smoke test pairs it with a fake sales brain. Real cases live outside the repo."
+}

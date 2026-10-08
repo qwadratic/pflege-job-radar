@@ -90,6 +90,27 @@ def test_out_of_scope_region_never_reaches_the_model(luna):
     assert "Bayern" in d["bubbles"][0] and d["slots"]["region"] == "berlin"
 
 
+def test_the_locked_texts_are_the_ones_ivan_approved_on_2026_10_08():
+    """Character for character (em dash U+2014 in the refusal, the emoji in the region text). The
+    holding message of a blocked reply is gone: nothing is sent then (see the dialog-rule tests)."""
+    assert LB.P.REJECT_BODY_DE == (
+        "Vielen Dank für Ihre Nachricht. Aktuell können wir Ihnen leider nicht helfen, da uns eine "
+        "anerkannte Pflegefachkraft-Qualifikation (bzw. ein Anerkennungspfad) fehlt. Falls sich Ihre "
+        "Anerkennung später ändert, melden Sie sich gern \u2014 alles Gute für Sie!")
+    assert LB.P.OUT_OF_SCOPE_REGION_DE == (
+        "Vielen Dank \U0001F642 Aktuell zeige ich offene Pflegestellen an bayerischen Kliniken. Für ein "
+        "anderes Bundesland kann ich gerade nichts Konkretes anbieten. Welche Stadt in Bayern "
+        "interessiert Sie?")
+    assert not hasattr(LB.P, "BLOCKED_REPLY_DE")
+
+
+def test_the_model_is_told_how_to_read_the_answer_to_the_locked_region_text():
+    rule = _rule("OUR OUTBOUND")
+    assert "The out_of_scope_region text offers Bavaria and asks which Bavarian city interests them" in rule
+    assert "region=Bayern and that city in card_patch" in rule
+    assert "a bare Ja only means Bavaria is fine" in rule
+
+
 def test_out_of_scope_region_is_whole_word(luna):
     assert LB.named_non_bavaria_land("ich mag Hessendorf") is None
     assert LB.named_non_bavaria_land("NRW-Fan-Artikel") is None
@@ -529,6 +550,16 @@ def test_prompt_document_ask_requires_both_and_re_asks_the_missing_one_every_tur
     assert "never a document the candidate only said they have" in close
     think7 = next(s for s in LB.P.THINK_ORDER if s.startswith("7) CONVERGE"))
     assert "on every turn until both have arrived" in think7
+
+
+def test_converge_step_puts_our_unanswered_question_ahead_of_next_objective():
+    # Ivan, 2026-10-08: a file sent instead of an answer must not turn the next turn into the next gate (eval
+    # finding: Haiku thanked for the CV and asked the region question, dropping our open Defizitbescheid question).
+    think7 = next(s for s in LB.P.THINK_ORDER if s.startswith("7) CONVERGE"))
+    assert "OUR OPEN QUESTION COMES FIRST" in think7
+    assert "ask THAT question again, ahead of next_objective" in think7
+    assert "ask nothing new in the same turn" in think7
+    assert "advanced a different open gate" in think7
 
 
 # --- TASK-339: no either/or question a bare "ja" answers (Ivan's manual test 2026-09-13: "Urkunde
@@ -1116,10 +1147,10 @@ def test_too_many_bubbles_is_a_corrective_retry_not_an_exception(luna):
     assert d["action"] == "reply_after_correction" and "_escalated" not in d["slots"]
 
 
-def test_a_persistent_too_many_bubbles_violation_ends_in_the_holding_message_not_silence(luna):
+def test_a_persistent_too_many_bubbles_violation_sends_nothing_and_flags_the_thread(luna):
     out = _out(bubbles=["one", "two", "three"])
     d = LB.turn("Hallo", luna, client=fake_client(out))
-    assert d["bubbles"] == [LB.P.BLOCKED_REPLY_DE]
+    assert d["bubbles"] == []
     assert d["action"] == "reply_blocked_escalated"
     assert d["slots"]["_escalated"] is True
 
@@ -1139,10 +1170,10 @@ def test_an_empty_bubble_is_a_corrective_retry_not_an_exception(luna):
     assert d["action"] == "reply_after_correction" and "_escalated" not in d["slots"]
 
 
-def test_a_persistent_empty_bubble_violation_ends_in_the_holding_message_not_silence(luna):
+def test_a_persistent_empty_bubble_violation_sends_nothing_and_flags_the_thread(luna):
     out = _out(bubbles=[""])
     d = LB.turn("Hallo", luna, client=fake_client(out))
-    assert d["bubbles"] == [LB.P.BLOCKED_REPLY_DE]
+    assert d["bubbles"] == []
     assert d["action"] == "reply_blocked_escalated"
     assert d["slots"]["_escalated"] is True
 
@@ -1300,6 +1331,46 @@ def test_live_reply_raises_session_not_found_only_on_a_resumes_own_signature(lun
     with pytest.raises(RuntimeError) as raised3:
         LB.Client()._live_reply("s", "u", "stale-id")
     assert not isinstance(raised3.value, LB.SessionNotFound)
+
+
+def test_live_reply_raises_non_json_reply_carrying_the_failed_attempts_session(luna, monkeypatch):
+    """A plain-text answer (no JSON at all) is a NonJsonReply that still IS a RuntimeError -- every
+    existing except path is unchanged -- and carries the session it ran in, so the retry resumes it."""
+    stdout = json.dumps({"is_error": False, "result": "just a friendly sentence, no braces",
+                         "session_id": "failed-attempt-session"})
+    monkeypatch.setattr(subprocess, "run", _fake_cli(stdout=stdout))
+    with pytest.raises(LB.NonJsonReply) as raised:
+        LB.Client()._live_reply("s", "u", None)
+    assert isinstance(raised.value, RuntimeError)
+    assert raised.value.session_id == "failed-attempt-session"
+
+
+def test_reply_asks_again_until_a_json_object_comes_back():
+    calls = []
+
+    def fn(system, user, session_id):
+        calls.append((user, session_id))
+        if len(calls) < 3:
+            raise LB.NonJsonReply("not json", f"attempt-{len(calls)}")
+        return _out(), "attempt-3"
+
+    out, session_id = LB.Client(reply=fn).reply("sys", "the real payload", None)
+    assert [c[1] for c in calls] == [None, "attempt-1", "attempt-2"]
+    assert calls[0][0] == "the real payload"
+    assert all(json.loads(c[0]) == {"instruction": LB.NON_JSON_HINT} for c in calls[1:])
+    assert session_id == "attempt-3" and out["action"]
+
+
+def test_reply_does_not_retry_any_other_failure():
+    calls = []
+
+    def fn(system, user, session_id):
+        calls.append(1)
+        raise RuntimeError("claude -p did not answer within 600s")
+
+    with pytest.raises(RuntimeError):
+        LB.Client(reply=fn).reply("sys", "payload", None)
+    assert len(calls) == 1
 
 
 def test_turn_recovers_from_a_stale_session_id_by_retrying_once_as_a_fresh_contact(luna, monkeypatch):
@@ -1484,3 +1555,52 @@ def test_webhook_uses_the_luna_brain_when_selected(luna, monkeypatch):
 
 def test_webhook_default_config_still_uses_the_deterministic_brain(luna):
     assert C.BRAIN == "deterministic", "the default must not have flipped for every other test"
+
+
+# --- Ivan, 2026-10-07: language follows the candidate, off-region answer, no hand-off promises -------
+# These are instructions to the model, so what is pinned is what the prompt tells it; the code that
+# enforces the third is tested in tests/test_wa_luna_dialog_rules.py (PROMISE).
+
+def test_the_language_rule_follows_the_candidates_latest_message_with_german_as_the_default():
+    rule = _rule("LANGUAGE")
+    assert "in the language of the candidate's LATEST message" in rule
+    assert "follow a switch mid-thread" in rule
+    assert "German is the default whenever the latest message gives no language to follow" in rule
+    assert "a bare Ja/Ok/Danke, an emoji" in rule and "or mixes languages" in rule
+    assert "The fixed texts the harness sends itself stay German" in rule
+    # what used to forbid a Russian reply to a Russian-writing candidate is gone, the rest is kept
+    assert "German only" not in rule and "Never mix in Russian" not in rule
+    assert "Vary your wording" in rule and "Never re-ask a fact already answered" in rule
+    system = LB.P.system_prompt(LB._CONSTITUTION_TEXT, LB._QUALIFICATION_TEXT)
+    assert "reply in German, LANGUAGE" not in system
+    assert "reply in the language of that transcript, LANGUAGE" in _rule("VOICE NOTE")
+
+
+def test_the_off_region_rule_says_we_do_not_serve_it_offers_bavaria_with_the_count_and_waits():
+    rule = _rule("OFF REGION")
+    assert "in her language (LANGUAGE)" in rule
+    assert "we do not know that region and do not serve it, we specialise in Bavaria" in rule
+    assert "market_snapshot.open_jobs" in rule and "her region question is itself a criterion" in rule
+    assert "ONE plain yes/no question whether Bavaria would be an option, then WAIT" in rule
+    assert "no next gate in the same message" in rule
+    assert "never written into card_patch (no region, no city) as if we served it" in rule
+    # the three places that forbid a board-wide total while the card is empty name the exception
+    assert "OFF REGION" in LB.P.THINK_ORDER[0]
+    assert "OFF REGION is the one other case" in _rule("TOOLS (mandatory")
+    assert "OFF REGION applies" in _rule("CAMPAIGN (TASK-203)")
+    # and the two rules that used to answer the single-Land case point at it instead of repeating it
+    assert "is OFF REGION below" in _rule("REGION:")
+    assert "wanting a job only in that other Land: OFF REGION" in _rule("CAMPAIGN (TASK-203)")
+
+
+def test_the_prompt_forbids_hand_off_promises_and_no_instruction_still_asks_for_one():
+    rule = _rule("NO HAND-OFF PROMISES")
+    assert "will call, call back, get in touch, look at it, check it, take care of it or forward it" in rule
+    assert "escalate_to_manager only flags the thread" in rule
+    assert "say what we do know" in rule and "requirement_scoreboard.next_objective" in rule
+    assert "forwarding her profile or documents to clinics once she consented" in rule
+    # the two rules that used to tell the model to announce that a colleague looks or checks
+    assert "say a colleague will look at it" not in _rule("OTHER MESSAGE KINDS")
+    assert "never a new promise that a colleague will look at it" in _rule("OTHER MESSAGE KINDS")
+    assert "say a human colleague will check" not in _rule("PRIOR CONTACT")
+    assert "never that a colleague will check" in _rule("PRIOR CONTACT")

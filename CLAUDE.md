@@ -44,3 +44,14 @@ New task ids are born only on `origin/main`, never on a feature branch. Two bran
 ## Closing tasks
 
 The session that does a task closes it. When it considers the work finished and no re-check is planned, it follows `backlog instructions task-finalization` in the same change set: evidence per acceptance criterion, final summary, status Done. If a re-check is planned, the notes say who re-checks and what, and the task stays open until then. Do not leave a finished task `In Progress` for someone else to close.
+
+## Iterating on the WhatsApp brain
+
+A change to what the Luna brain says or decides (prompt rules, tools, gates, card or context fields) is checked with the brain eval, `evals/wa_brain/` (Ivan, 2026-10-07). It runs by hand when a feature is built or changed: never in CI, never part of `pytest`. Tests only prove the harness itself runs.
+
+- **Phase 1, old vs new (now):** a test point is a real old conversation as it was, the old bot's replies standing in for our own history, with the brain run at chosen turns (`--at-turns`). Several points per candidate, several runs per point. No answer is composed in advance: a judge model works out the best reply for the situation, scores the old reply and the unlabelled new runs side by side, then comments across all points.
+- **Phase 2, features (once our bot runs live):** histories hold our own bot's replies, and each new feature gets its own points.
+- **The eval collects communication patterns**, so region does not matter: the set keeps Bavarian conversations plus one other-region point; anything else is re-set on the Bavarian fixture.
+- **Nothing is sent.** The harness runs on the replay isolation (scratch DB, no rail, sales brain read-only). Case files, results and scratch state hold real conversations and live outside every checkout; the tool refuses paths inside one.
+- **Every report states** the git sha, runs per point, failed runs, and the weekly budget before and after.
+- **Candidate-facing fixed wording is never composed from a judge's complaint.** A finding about a locked German text goes to Ivan for his verbatim wording.
