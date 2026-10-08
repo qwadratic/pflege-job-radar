@@ -91,8 +91,8 @@ then gets the turn text a live media message gets: nothing (``""``) for an attac
 placeholder otherwise. A file that fails to read or classify raises (the capture is not a seed then).
 SUBSTITUTES. ``substitute_files`` ``{"cv_attachment_id", "qualification_attachment_id"}`` (donor rows of
 ``candidate_attachments``, an eval-input edit) gives every file row that is unavailable for
-``not_on_a_readable_root`` (never a readable one, a voice note or a missing row) a donor, in history order, cycling
-cv, qualification, cv, ...;
+``not_on_a_readable_root`` (never a readable one, a voice note or a missing row) the donor of the kind the old
+system's CRM class says the original was (urkunde -> qualification; cv, cv_standardized -> cv; others stay unavailable);
 the entry says ``found_via: "substitute"``, ``substitute_kind``, ``substitute_attachment_id``. The donor goes
 through the same read, sha256 check and ``_ingest_media``; an unreadable donor raises. Needs ``media_roots``.
 Without ``media_roots`` nothing of this happens (placeholders, as before). With roots but without a seed, a
@@ -163,7 +163,6 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import itertools
 import json
 import mimetypes
 import pathlib
@@ -290,6 +289,18 @@ def fetch_attachment(attachment_id, sales_brain_path):
     return rows[0] if rows else None
 
 
+def fetch_crm_doc_class(attachment_id, sales_brain_path):
+    """-> the old system's own class of one attachment (``metadata_json.crm_doc_class``, e.g. "urkunde", "cv",
+    "cv_standardized", "other") or None. Read-only; only that one key of the row is looked at."""
+    rows = _attachment_query(sales_brain_path, "select metadata_json from candidate_attachments where id=?",
+                             (attachment_id,))
+    try:
+        value = json.loads(rows[0]["metadata_json"] or "{}").get("crm_doc_class") if rows else None
+    except ValueError:
+        return None
+    return value if isinstance(value, str) else None
+
+
 def fetch_attachments_by_sha(sha256, sales_brain_path, exclude_id):
     """-> the OTHER attachment rows holding the same bytes (same sha256), same columns, oldest id first."""
     return _attachment_query(sales_brain_path, "select id, storage_path, sha256, mime_type from "
@@ -363,16 +374,23 @@ def _locate_row_file(row, sales_brain_path, media_roots, substitutes=None):
 SUBSTITUTE_KEYS = {"cv_attachment_id": "cv", "qualification_attachment_id": "qualification"}
 
 
+# SUBSTITUTES: which donor stands in for a file by the old system's class of the original (read from the CRM, the
+# unreadable file itself is never opened). Any other class (other, none) has no analogous donor and stays unavailable.
+SUBSTITUTE_BY_CRM_CLASS = {"urkunde": "qualification", "cv": "cv", "cv_standardized": "cv"}
+
+
 def _plan_substitutes(rows, substitute_files, sales_brain_path, media_roots):
-    """SUBSTITUTES: -> {source row id: (kind, donor attachment id)}. The file rows that are unavailable only
-    for ``not_on_a_readable_root`` get the donors in history order, cycling (cv, qualification, cv, ...): a chat
-    that sent many files has the bot able to open every one of them from history. Decided from the whole history,
-    so the capture walk and every run walk agree."""
+    """SUBSTITUTES: -> {source row id: (kind, donor attachment id)}. A file row that is unavailable only for
+    ``not_on_a_readable_root`` gets the donor of the same kind as the old system classed the original
+    (SUBSTITUTE_BY_CRM_CLASS: a diploma gets the donor certificate, a CV the donor CV), so the context stays the
+    same and only the person differs. Every such row gets one, so the bot can open any earlier file from history;
+    a row of another or no class stays unavailable. Decided from the whole history, so the capture walk and
+    every run walk agree."""
     if set(substitute_files) != set(SUBSTITUTE_KEYS):
         raise ValueError(f"substitute_files must be exactly {sorted(SUBSTITUTE_KEYS)}, got {sorted(substitute_files)}")
     if media_roots is None:
         raise ValueError("substitute_files needs media_roots (a list of directories to read files from)")
-    donors = itertools.cycle([(SUBSTITUTE_KEYS[k], substitute_files[k]) for k in SUBSTITUTE_KEYS])
+    donor_by_kind = {SUBSTITUTE_KEYS[k]: substitute_files[k] for k in SUBSTITUTE_KEYS}
     plan = {}
     for row in rows:
         if not _wants_file_entry(row):
@@ -380,7 +398,9 @@ def _plan_substitutes(rows, substitute_files, sales_brain_path, media_roots):
         entry, _ = _locate_row_file(row, sales_brain_path, media_roots)
         if entry["reason"] != "not_on_a_readable_root":
             continue
-        plan[row["id"]] = next(donors)
+        kind = SUBSTITUTE_BY_CRM_CLASS.get(fetch_crm_doc_class(row["attachment_id"], sales_brain_path))
+        if kind is not None:
+            plan[row["id"]] = (kind, donor_by_kind[kind])
     return plan
 
 

@@ -80,7 +80,7 @@ is an unavailable file.
 **Substitute files.** A case may carry `"substitute_files": {"cv_attachment_id": 10, "qualification_attachment_id": 11}`
 (donor rows of `candidate_attachments`, from another candidate): an eval-input edit like `edits`, recorded, never a
 fallback. Only rows unavailable for `not_on_a_readable_root` are touched (never a readable file, voice note or
-missing row): such rows get the CV, then the qualification, then the CV again, and so on in history order, so the bot can
+missing row): each such row gets the donor of the kind the old system's CRM class says the original was (`urkunde` -> certificate, `cv`/`cv_standardized` -> CV; other or no class stays unavailable), so the context is the same and only the person differs, and the bot can
 open any earlier file from history. `--donor-packs FILE` (JSON list of such objects, outside the checkout) gives every
 case without its own `substitute_files` the pack `packs[candidate_id % len(packs)]`, logged per case; use it on every
 run. The donor goes through the same sha256 check and live media path; an unreadable donor is an error. Entries say

@@ -32,7 +32,7 @@ _SPEC.loader.exec_module(CLI)
 
 _COLUMNS = ("id", "candidate_id", "phone_e164", "wamid", "direction", "message_type",
             "body", "caption", "media_filename", "attachment_id", "occurred_at")
-_ATTACHMENT_COLUMNS = ("id", "storage_path", "sha256", "mime_type", "original_filename")
+_ATTACHMENT_COLUMNS = ("id", "storage_path", "sha256", "mime_type", "original_filename", "metadata_json")
 
 
 def _make_sales_brain(path, rows, attachments=()):
@@ -1472,9 +1472,10 @@ CERT_BYTES = "Urkunde. Staatliche Anerkennung als Pflegefachfrau.".encode("utf-8
 SUBS = {"cv_attachment_id": 10, "qualification_attachment_id": 11}
 
 
-def _thread_with_three_files(tmp_path, cand=9050, real_ok=(), donors=True):
+def _thread_with_three_files(tmp_path, cand=9050, real_ok=(), donors=True, classes=("cv", "urkunde", "cv_standardized")):
     """Three document rows (turns 1-3), each answered; attachments 1-3 are the real files (on the root only when
-    their index is in ``real_ok``), 10 and 11 the donor CV and certificate."""
+    their index is in ``real_ok``; the old system's CRM class of each is ``classes``), 10 and 11 the donor CV and
+    certificate."""
     files = {}
     files["d/cv.txt"] = CV_BYTES
     files["d/cert.txt"] = CERT_BYTES
@@ -1484,7 +1485,8 @@ def _thread_with_three_files(tmp_path, cand=9050, real_ok=(), donors=True):
         blob = b"real file %d" % n
         if n in real_ok:
             files[f"r/{n}.txt"] = blob
-        atts.append({"id": n, "storage_path": f"r/{n}.txt", "sha256": _sha(blob), "mime_type": "text/plain"})
+        atts.append({"id": n, "storage_path": f"r/{n}.txt", "sha256": _sha(blob), "mime_type": "text/plain",
+                     "metadata_json": json.dumps({"crm_doc_class": classes[n - 1]})})
         rows.append(_row(2 * n - 1, cand, "inbound", "document", f"2030-09-01T10:0{n}:00+00:00",
                          media_filename=f"f{n}.txt", attachment_id=n))
         rows.append(_row(2 * n, cand, "outbound", "text", f"2030-09-01T10:0{n}:05+00:00", body="ok"))
@@ -1498,7 +1500,7 @@ def _file_entries(result):
     return [f for l in map(json.loads, open(result["jsonl_path"], encoding="utf-8")) for f in l.get("files") or []]
 
 
-def test_substitutes_cycle_over_every_unavailable_row_in_history_order(
+def test_substitutes_follow_the_old_systems_class_of_each_unavailable_original(
         tmp_path, scratch_dir, monkeypatch):
     root, db = _thread_with_three_files(tmp_path)
     readers = _FakeReaders(monkeypatch)
@@ -1517,7 +1519,7 @@ def test_substitutes_cycle_over_every_unavailable_row_in_history_order(
     assert "path" not in json.dumps(_file_entries(result)) and "d/cv.txt" not in json.dumps(_file_entries(result))
 
 
-def test_a_readable_real_file_is_never_replaced_and_does_not_use_up_a_substitute(tmp_path, scratch_dir, monkeypatch):
+def test_a_readable_real_file_is_never_replaced(tmp_path, scratch_dir, monkeypatch):
     root, db = _thread_with_three_files(tmp_path, real_ok=(1,))
     _FakeReaders(monkeypatch)
     monkeypatch.setattr(LB, "turn", _fake_turn())
@@ -1525,7 +1527,7 @@ def test_a_readable_real_file_is_never_replaced_and_does_not_use_up_a_substitute
                                  substitute_files=SUBS)
     e1, e2, e3 = _file_entries(result)
     assert (e1["found_via"], "substitute_kind" in e1) == ("own_path", False)
-    assert (e2["substitute_kind"], e3["substitute_kind"]) == ("cv", "qualification")
+    assert (e2["substitute_kind"], e3["substitute_kind"]) == ("qualification", "cv")
 
 
 def test_an_unreadable_donor_is_a_loud_error_not_a_fallback(tmp_path, scratch_dir, monkeypatch):
@@ -1571,7 +1573,8 @@ def test_a_donor_is_read_as_its_own_kind_not_as_the_unreadable_source_row_that_i
     root = _media_root(tmp_path, {"d/cv.txt": CV_BYTES, "d/cert.txt": CERT_BYTES})
     rows = [_row(1, 9060, "inbound", "image", "2030-09-01T10:01:00+00:00", attachment_id=1),
             _row(2, 9060, "outbound", "text", "2030-09-01T10:01:05+00:00", body="ok")]
-    atts = [{"id": 1, "storage_path": "r/1.bin", "sha256": _sha(b"photo"), "mime_type": "image/jpeg"},
+    atts = [{"id": 1, "storage_path": "r/1.bin", "sha256": _sha(b"photo"), "mime_type": "image/jpeg",
+             "metadata_json": json.dumps({"crm_doc_class": "cv"})},
             {"id": 10, "storage_path": "d/cv.txt", "sha256": _sha(CV_BYTES), "mime_type": "text/plain"},
             {"id": 11, "storage_path": "d/cert.txt", "sha256": _sha(CERT_BYTES), "mime_type": "text/plain"}]
     db = _make_sales_brain(tmp_path / "sb.sqlite", rows, atts)
@@ -1583,3 +1586,16 @@ def test_a_donor_is_read_as_its_own_kind_not_as_the_unreadable_source_row_that_i
     assert (entry["status"], entry["found_via"], entry["substitute_kind"]) == ("attached", "substitute", "cv")
     assert readers.vision == []
     assert readers.classified == [CV_BYTES.decode("utf-8")]
+
+
+def test_an_original_of_another_or_no_class_stays_unavailable_and_a_diploma_gets_the_certificate_even_first(
+        tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_three_files(tmp_path, classes=("urkunde", "other", None))
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    result = RP.replay_candidate(9050, scratch_dir, capture_before=[3], media_roots=[root], sales_brain_path=db,
+                                 substitute_files=SUBS)
+    e1, e2, e3 = _file_entries(result)
+    assert (e1["status"], e1["substitute_kind"], e1["substitute_attachment_id"]) == ("attached", "qualification", 11)
+    for e in (e2, e3):
+        assert (e["status"], e["reason"], e["found_via"]) == ("unavailable", "not_on_a_readable_root", None)
