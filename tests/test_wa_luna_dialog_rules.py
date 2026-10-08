@@ -2452,6 +2452,27 @@ PROMISE_HITS = [
     "I will pass it on to a colleague.",
     "Our team will follow up with you.",
     "We’ll take care of that.",
+    # passive / recorded shapes (Ivan, 2026-10-08): the candidate's own request, question or message "was
+    # noted / recorded / passed on" reads as "someone will handle it"
+    "Ihre Anfrage wurde notiert.",
+    "Ihr Anliegen ist vermerkt.",
+    "Ihre Frage haben wir festgehalten.",
+    "Ihre Anfrage zur Wohnung in München wurde notiert.",
+    "Ich habe Ihre Frage notiert.",
+    "Ich notiere mir Ihre Frage.",
+    "Ihre Rückfrage wurde weitergegeben.",
+    "Ihre Nachricht ist bei uns registriert.",
+    "Ihre Frage leite ich weiter.",
+    "Ich leite Ihre Frage weiter.",
+    "Ich halte Ihre Anfrage fest.",
+    "Your request has been noted.",
+    "Your question was forwarded.",
+    "I have recorded your message.",
+    "We'll pass your question on.",
+    "Ваш запрос записан.",
+    "Ваш вопрос передан.",
+    "Я зафиксировала ваше обращение.",
+    "Я передам ваш вопрос.",
 ]
 
 PROMISE_NON_HITS = [
@@ -2491,6 +2512,23 @@ PROMISE_NON_HITS = [
     "Zu früheren Bewerbungen habe ich hier keine Angaben.",
     "Haben Sie schon die deutsche Urkunde?",
     "Wie viele Personen würden in der Wohnung wohnen?",
+    # passive shapes that are NOT the promise: a FACT about the candidate (no request/question/message noun),
+    # a kept action, the candidate asked to note something, one clause per noun and verb
+    "Ich habe notiert, dass Sie in München suchen.",
+    "Notiert: München, Intensivstation.",
+    "Danke für Ihre Nachricht – ich habe München notiert.",
+    "Danke für Ihre Nachricht, ich habe München notiert.",
+    "Ihr Wunsch München ist notiert.",
+    "Ihr Profil wurde an passende Kliniken weitergeleitet.",
+    "Bitte notieren Sie sich die Nummer.",
+    "Ihre Frage zur Wohnung beantworte ich gern.",
+    "Ich frage nach, ob die Stelle noch frei ist.",
+    "I noted that you are looking in Munich.",
+    "Your message is clear, thanks.",
+    "Your CV has been forwarded to the clinics you chose.",
+    "Я записал, что вы ищете в Мюнхене.",
+    "Ваш профиль передан в клинику после вашего согласия.",
+    "Ваш вопрос понятен, отвечаю сразу.",
 ]
 
 

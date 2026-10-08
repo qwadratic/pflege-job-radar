@@ -304,8 +304,9 @@ def named_non_bavaria_land(text):
     """The out-of-scope Bundesland named in this message, or None. Whole-word (and not glued to
     a hyphen either), so 'Hessendorf' and 'NRW-Fan-Artikel' do not fire on 'Hessen'/'NRW'.
 
-    None when Bayern is ALSO named in the same message (real bug, TASK-360 adjacent, 2026-09-22 --
-    found by reading the full real candidate-history corpus): 'In Bayern oder in Baden-Württemberg'
+    None when a Bavarian town is ALSO named (below), and when Bayern is ALSO named in the same message
+    (real bug, TASK-360 adjacent, 2026-09-22 -- found by reading the full real candidate-history
+    corpus): 'In Bayern oder in Baden-Württemberg'
     used to trip this shortcut on 'Baden-Württemberg' alone, sending the canned OUT_OF_SCOPE_REGION_DE
     text (which never even names the state that WAS just asked about) and silently setting
     card.region to the wrong Land, even though the candidate explicitly included Bayern -- the one
@@ -313,6 +314,12 @@ def named_non_bavaria_land(text):
     for this mixed case and needs the model to actually run, not this shortcut intercepting first."""
     low = _fold(text)
     if _BAYERN_RE.search(low):
+        return None
+    # A Bavarian town named too ('Berlin und München', 2026-10-08, eval finding) is the same mixed case
+    # as Bayern named: the REGION rule covers it and the model answers. "Bavarian town" = a town the
+    # board has open postings in -- the vocabulary read_city and the tools' _resolve_city use -- so no
+    # hand-written list.
+    if SL.read_city(text, B.known_cities()):
         return None
     for land in NON_BAVARIA_LAENDER:
         if re.search(r"(?<![a-zäöü0-9-])" + re.escape(land) + r"(?![a-zäöü0-9-])", low):
@@ -1799,7 +1806,9 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         return {"bubbles": [], "buttons": [], "slots": card, "asked": asked, "stopped": True,
                 "matches": [], "action": "stopped"}
 
-    land = named_non_bavaria_land(text)
+    # WA_LUNA_LOCKED_TEMPLATES=exceptions (the A/B arm, app/wa/config.py): no locked region text -- the
+    # model runs and answers OFF REGION itself, and the harness writes no card.region for it.
+    land = (named_non_bavaria_land(text) if C.LUNA_LOCKED_TEMPLATES == "all" else None)
     if land and not card.get("region") and _region_shortcut_applies(card, context):
         card["region"] = land
         return {"bubbles": [P.OUT_OF_SCOPE_REGION_DE], "buttons": [], "slots": card, "asked": asked,
@@ -1838,7 +1847,8 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         if warming.get("no_match"):
             card[WARMING_NOTE_KEY] = {"kind": "no_match", "criteria": warming["no_match"]["criteria"],
                                       "at": turn_at}
-    system_text = P.system_prompt(_CONSTITUTION_TEXT, _QUALIFICATION_TEXT)
+    system_text = P.system_prompt(_CONSTITUTION_TEXT, _QUALIFICATION_TEXT,
+                                   locked_templates=C.LUNA_LOCKED_TEMPLATES)
     user_text = _user_payload(text, card, scoreboard, snapshot, button_id, documents_just_received, context)
 
     cl = client or Client()
@@ -1958,7 +1968,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
     elif card.get("declined"):
         bubbles = []
         action = "declined_no_send"
-    elif says_not_placeable:
+    elif says_not_placeable and C.LUNA_LOCKED_TEMPLATES == "all":
         # The gate the model must not rephrase (prompts.py module docstring, point 2). This one
         # gate overrides no_send too -- the very first decline must always be said out loud.
         bubbles = [P.REJECT_BODY_DE]
@@ -1972,7 +1982,7 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         # empty bubbles list is unambiguous regardless of what the flag says.
         bubbles = []
         action = str(out.get("action") or "no_send")
-    elif (out.get("action") == "explain_not_placeable"
+    elif (out.get("action") == "explain_not_placeable" and C.LUNA_LOCKED_TEMPLATES == "all"
           and (card.get("qualification_ok") is False or card.get("qualification_path") == "reject")):
         # TASK-380 follow-up: ``says_not_placeable`` above only catches the turn the card FIRST
         # becomes not-placeable. A candidate who was already not-placeable before this turn and

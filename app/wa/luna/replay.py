@@ -129,7 +129,8 @@ ESCALATION. ``line["luna"]["escalation"]`` is a diff, ``{field: {"before", "afte
 escalation/flag card keys (``app/wa/luna/escalation.py``) THIS turn changed, like ``slots_diff``. Not the
 card's current value, which would repeat an old escalation on every later line.
 
-INSTRUMENTATION (AC#3). Every line carries ``model``/``effort`` (``config.LUNA_MODEL``/``LUNA_EFFORT``) and
+INSTRUMENTATION (AC#3). Every line carries ``model``/``effort`` (``config.LUNA_MODEL``/``LUNA_EFFORT``),
+``locked_templates`` (``config.LUNA_LOCKED_TEMPLATES``, the A/B arm: ``all`` or ``exceptions``) and
 ``git_sha`` (HEAD of the checkout this file lives in). ``timings`` and ``tokens`` are ``None`` plus a note:
 ``luna_brain.turn()`` returns neither (``Client._live_reply`` only LOGS ``duration_ms``/``num_turns``).
 They need a change to its return contract first; nothing is invented here.
@@ -454,7 +455,8 @@ def _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=None):
             "inbound": [{"text": m["text"], "kind": m["kind"], "at": m["at"]} for m in burst],
             "media_placeholder": any(m["media_placeholder"] for m in burst),
             "prior_context_len": prior_context_len,
-            "model": C.LUNA_MODEL, "effort": C.LUNA_EFFORT, "git_sha": git_sha,
+            "model": C.LUNA_MODEL, "effort": C.LUNA_EFFORT, "locked_templates": C.LUNA_LOCKED_TEMPLATES,
+            "git_sha": git_sha,
             "timings": None, "tokens": None,
             "instrumentation_note": "luna_brain.turn() returns neither per-stage timings nor token "
                                     "counts (module docstring, INSTRUMENTATION)"}
@@ -504,7 +506,8 @@ def _unchosen_turn_line(conn, t, candidate_id, turn_idx, burst, git_sha):
             "inbound": [{"text": m["text"], "kind": m["kind"], "at": m["at"]} for m in burst],
             "media_placeholder": any(m["media_placeholder"] for m in burst),
             "prior_context_len": ST.last_message_id(conn, t["phone"]),
-            "model": C.LUNA_MODEL, "effort": C.LUNA_EFFORT, "git_sha": git_sha,
+            "model": C.LUNA_MODEL, "effort": C.LUNA_EFFORT, "locked_templates": C.LUNA_LOCKED_TEMPLATES,
+            "git_sha": git_sha,
             "skipped_reason": "not_in_at_turns"}
 
 
@@ -741,5 +744,6 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
     result = {"candidate_id": candidate_id, "turns_run": turn_idx, "truncated": truncated,
               "errors": n_errors, "jsonl_path": str(jsonl_path), "sqlite_path": str(sqlite_path)}
     if capture is not None:
-        result.update(seeds=captured, git_sha=git_sha, model=C.LUNA_MODEL, effort=C.LUNA_EFFORT)
+        result.update(seeds=captured, git_sha=git_sha, model=C.LUNA_MODEL, effort=C.LUNA_EFFORT,
+                      locked_templates=C.LUNA_LOCKED_TEMPLATES)
     return result

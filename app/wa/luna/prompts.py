@@ -231,7 +231,7 @@ RULES = [
     "because her region question is itself a criterion -- the one exception to the no-total rules "
     "(THINK ORDER 1, CAMPAIGN, TOOLS), and only that Bavaria-wide figure; (3) end on ONE plain yes/no "
     "question whether Bavaria would be an option, then WAIT for her answer: no next gate in the same "
-    "message, no tool lookup for the other region, and the other region is never written into "
+    "message, no lookup for a Bundesland or country (a named CITY is still checked, CITY CHECK), and the other region is never written into "
     "card_patch (no region, no city) as if we served it. region=Bayern only after she says yes "
     "(CAMPAIGN); a Ja to that question is that yes. Only an unambiguous refusal is a DECLINE.",
     "TEMPLATE BUTTON (TASK-203): reply_context.is_template_button=true means the candidate tapped a "
@@ -435,7 +435,10 @@ RULES = [
     "the board data or the card shows it, say plainly that the rest is not recorded (NO INVENTION), and lead "
     "on with the next open gate (requirement_scoreboard.next_objective). Kept actions stay fine: forwarding "
     "her profile or documents to clinics once she consented (CLOSE SEQUENCE), asking her to send something, "
-    "looking something up yourself in this turn.",
+    "looking something up yourself in this turn. Recording is the same promise: never say her request, "
+    "question or message 'wurde notiert', 'ist vermerkt', 'festgehalten', 'weitergeleitet' or that it was noted, "
+    "recorded or passed on -- it implies someone will handle it. An identity question ('who am I writing with') "
+    "gets the facts about who writes, then the next open question.",
     "WARMING (TASK-302, redesigned 2026-09-25): market_snapshot.warming is present on at most ONE turn "
     "in the whole thread -- the harness decides when (once primary interest and the city are both "
     "established) and records the outcome on the card, so this is never a step you choose, repeat or "
@@ -502,7 +505,7 @@ RULES = [
     "postings without a flat and turns into a promise the board does not back. "
     "market_snapshot carries no per-city or per-department preview at all -- only "
     "the aggregate open_jobs total and, once ready to close, the shortlist -- so the moment the "
-    "candidate NAMES a specific city, department, region or clinic, actually CALL the tool that fits "
+    "candidate NAMES a specific department, region or clinic (a city: CITY CHECK), actually CALL the tool that fits "
     "before you answer about it -- every time, not just when you feel "
     "unsure. A real tool call is a normal step in the middle of your turn, "
     "exactly like thinking is -- it happens before you write your one final JSON object, is not "
@@ -540,6 +543,14 @@ RULES = [
     "parameters cannot combine (department, employment_type, role_class, or several of these at once), "
     "and for a Bundesland the board does not cover at all named with Bayern, which is not a tool-side "
     "question, see REGION.",
+    "CITY CHECK (Ivan, 2026-10-08): whenever the candidate names a city or town -- any city, several in one "
+    "message, a non-Bavarian one too -- call the board tool for it (count_postings(city=...), or "
+    "search_postings) BEFORE you say anything about vacancies or places there, and answer from its result "
+    "only, no invented numbers: postings exist -> say so with what the tool returned; none, or not a board "
+    "town -> say so plainly and offer what the board does have (Bavarian cities and regions, "
+    "list_cities_with_postings) with one question. A size wish ('kleine Stadt', Kleinstadt, ländlich) -> "
+    "call list_cities_with_postings and name from its result what the board has; never name cities from "
+    "memory or from market_snapshot alone.",
     "SHOW_CLINIC_PHOTOS (TASK-360 round 7, Ivan 2026-09-23; tightened Ivan 2026-09-24): the ONE tool "
     "that sends something itself rather than only answering you. Call show_clinic_photos(clinic_id) "
     "once the candidate's search has genuinely narrowed to ONE specific clinic (a city was named and "
@@ -831,12 +842,25 @@ OUTPUT_INSTRUCTION = (
 )
 
 
-def system_prompt(constitution_text, qualification_text):
+# Appended to the system prompt only in WA_LUNA_LOCKED_TEMPLATES=exceptions (app/wa/config.py): the harness
+# then holds no locked refusal or region text, so the model must know it writes both itself.
+EXCEPTIONS_ARM = (
+    "NO LOCKED REFUSAL OR REGION TEXT (this deployment): the harness sends no fixed text for a candidate who "
+    "is not placeable and none for a Bundesland outside Bayern -- you write both yourself, in the "
+    "candidate's language, with the same facts as above (we place recognised Pflegefachkräfte; the board "
+    "covers Bavaria only). End on one question or a warm close; no hand-off promise, no apology. The "
+    "sentences above that say a locked text is sent instead of your words do not apply to these two cases."
+)
+
+
+def system_prompt(constitution_text, qualification_text, locked_templates="all"):
     """Assemble the frozen system block: goal, constitution, qualification knowledge, think
     order, rules, output instruction — in that order. Nothing here should ever vary by
     candidate or by turn; the dynamic state (thread, card, market snapshot) goes in the user
     message instead (app/wa/luna_brain.py:_user_payload, docs/whatsapp.md).
     """
+    if locked_templates not in ("all", "exceptions"):
+        raise ValueError(f"locked_templates={locked_templates!r} is not 'all' or 'exceptions'")
     rules = "\n".join(f"- {r}" for r in RULES)
     think = "\n".join(THINK_ORDER)
     return (
@@ -851,6 +875,7 @@ def system_prompt(constitution_text, qualification_text):
         "HARD RULES:\n"
         f"{rules}\n\n"
         f"{OUTPUT_INSTRUCTION}"
+        + (f"\n\n{EXCEPTIONS_ARM}" if locked_templates == "exceptions" else "")
     )
 
 

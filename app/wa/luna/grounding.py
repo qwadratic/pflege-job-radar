@@ -1442,7 +1442,45 @@ def _promise_re():
     en_hand_off = (r"(?:call|phone|ring|contact|reach\s+out|get\s+back|get\s+in\s+touch|be\s+in\s+touch|"
                    r"follow\s+up|look\s+(?:into|at)|check|review|take\s+care|handle|deal\s+with|forward|"
                    r"pass\s+(?:it|this|that|your\s+\w+)\s+on)")
+    # PASSIVE shapes of the same promise (Ivan, 2026-10-08): "Ihre Anfrage wurde notiert / ist vermerkt /
+    # wurde weitergeleitet" reads as "someone will handle it". These hit ONLY when the thing recorded or
+    # passed on is the candidate's own request, question, message or concern (a possessive + one of the
+    # speech-act nouns below), never a FACT about her: "Ich habe notiert, dass Sie in München suchen",
+    # "München, Intensiv: notiert" and "Ihr Profil wurde an passende Kliniken weitergeleitet" (a kept
+    # action) have no such noun and never match. The window between noun and verb is one clause: no
+    # comma, colon, dash, "und", "oder", "dass" in between, so "Danke für Ihre Nachricht, ich habe München
+    # notiert" stays a fact. "Wunsch" and "Bitte" are not nouns here on purpose ("Ihr Wunsch: München" is a
+    # card fact; "Bitte notieren Sie ..." is the candidate asked to write).
+    tg = r"(?:(?!\b(?:und|oder|aber|dass|weil|and|or|but|that|и|но|что)\b)[^.!?\n,;:\u2013\u2014-]){0,50}?"
+    de_noun = (r"\bihr\w*\s+(?:\w+\s+)?(?:anfrage|anfragen|frage|fragen|r[üu]ckfrage|r[üu]ckfragen|nachricht|"
+               r"nachrichten|anliegen|beschwerde|anmerkung)\b")
+    de_rec = r"(?:notiert|vermerkt|festgehalten|aufgenommen|registriert|dokumentiert|weitergeleitet|weitergegeben)\b"
+    de_rec_active = r"\b(?:notier|vermerk)(?:e|en|t)\b"
+    de_separable = ((r"(?:halte|halten)", "fest"), (r"(?:leite|leiten|leitet|gebe|geben|gibt)", "weiter"),
+                    (r"(?:nehme|nehmen)", "auf"))
+    en_noun = r"\byour\s+(?:\w+\s+)?(?:request|question|message|enquiry|inquiry|concern|query)s?\b"
+    en_rec = r"(?:noted|recorded|logged|registered|forwarded|escalated|passed\s+(?:on|along))\b"
+    en_rec_active = (r"\b(?:i|we)(?:['’](?:ve|ll)|\s+(?:have|will|shall))?\s+(?:\w+\s+)?"
+                     r"(?:note|noted|record|recorded|log|logged|register|registered|forward|forwarded|"
+                     r"pass|passed)\b")
+    ru_noun = r"\bваш\w*\s+(?:\w+\s+)?(?:запрос|вопрос|обращени|сообщени|просьб)\w*"
+    ru_rec = (r"(?:\bзапис(?:ан|ана|ано|аны|ал|ала|ываю)\w*|\bзафиксир\w*|\bпередан\w*|\bпередал\w*|"
+              r"\bпереслан\w*|\bпереслал\w*|\bотмечен\w*|\bотметил\w*|\bперед(?:ам|адим)\b|"
+              r"\bперешл(?:ю|ём|ем)\b)")
     shapes = [
+        # Passive / recorded request, German: "Ihre Anfrage wurde notiert", "ich habe Ihre Frage vermerkt",
+        # "ich leite Ihre Frage weiter", "Ihre Frage leite ich weiter".
+        rf"{de_noun}{tg}\b{de_rec}",
+        rf"\b{de_rec}{tg}{de_noun}",
+        rf"{de_noun}{tg}{de_rec_active}",
+        rf"{de_rec_active}{tg}{de_noun}",
+        *[rf"\b{v}\b{tg}{de_noun}{tg}\b{part}\b" for v, part in de_separable],
+        *[rf"{de_noun}{tg}\b{v}\b{tg}\b{part}\b" for v, part in de_separable],
+        # Passive / recorded request, English and Russian.
+        rf"{en_noun}{tg}\b(?:has|have|had|was|were|is|are|been)\s+(?:\w+\s+){{0,2}}{en_rec}",
+        rf"{en_rec_active}{tg}{en_noun}",
+        rf"{ru_noun}{tg}{ru_rec}",
+        rf"{ru_rec}{tg}{ru_noun}",
         # German: a person, then what that person will do -- and the other way round.
         rf"\b{de_person}\b{near}\b{de_verb}",
         rf"\b{de_verb}{near}\b{de_person}\b",

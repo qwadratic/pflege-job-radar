@@ -324,7 +324,7 @@ def prepare_cases(cases, out_dir, prep_dir, sales_brain_path=None, make_client=N
             for case in group:
                 prep = {"case": case["id"], "candidate_id": candidate_id, "at_turns": case["at_turns"],
                         "git_sha": result["git_sha"], "model": result["model"], "effort": result["effort"],
-                        "prepared_at": prepared_at, "files": files,
+                        "locked_templates": result["locked_templates"], "prepared_at": prepared_at, "files": files,
                         "points": {str(n): result["seeds"][n] for n in case["at_turns"]}}
                 _write_private(pathlib.Path(prep_dir) / f"{case['id']}.json",
                                json.dumps(prep, ensure_ascii=False, indent=1))
@@ -385,7 +385,7 @@ def run_cases(cases, out_dir, runs, sales_brain_path=None, make_client=None, log
             seeds = {n: prep["points"][str(n)] for n in case["at_turns"]} if prep else {}
             if prep:
                 log(f"{case['id']}: prep from git {prep['git_sha'][:10]}, {prep['model']}/{prep['effort']}, "
-                    f"prepared {prep['prepared_at']}")
+                    f"locked_templates={prep.get('locked_templates', 'not recorded')}, prepared {prep['prepared_at']}")
             for e in case.get("edits", []):
                 log(f"{case['id']}: edit {scrub(e['what'])}: {scrub(e['from'])} -> {scrub(e['to'])}")
             try:
@@ -404,7 +404,7 @@ def run_cases(cases, out_dir, runs, sales_brain_path=None, make_client=None, log
                                         "run": run, "bubbles": luna.get("bubbles") or [], "buttons": luna.get("buttons") or [],
                                         "action": luna.get("action"), "escalation": luna.get("escalation") or {},
                                         "error": error, "git_sha": line["git_sha"], "model": line["model"],
-                                        "effort": line["effort"], "covers": case["covers"], "region": case["region"],
+                                        "effort": line["effort"], "locked_templates": line["locked_templates"], "covers": case["covers"], "region": case["region"],
                                         "file_unavailable": line.get("file_unavailable")})
                         if run == 1:
                             points.append({"turn": line["turn"], "inbound": [m["text"] for m in line["inbound"]],

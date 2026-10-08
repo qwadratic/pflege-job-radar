@@ -77,6 +77,12 @@ line, `files` in the prep, a "file unavailable" note in the run log, `inbound_fi
 Voice notes are not transcribed here: the old system's transcript, if the CRM has one, is the text; without one it
 is an unavailable file.
 
+**A/B arms.** `WA_LUNA_LOCKED_TEMPLATES` (`app/wa/config.py`) picks the arm: `all` (default, today) or `exceptions` (the
+harness sends no locked out-of-scope-region text and no locked refusal; the model answers both itself). The
+environment is passed through unchanged, so run each arm with the same cases and prep and only the variable
+changed: `WA_LUNA_LOCKED_TEMPLATES=exceptions python evals/wa_brain/run.py --cases DIR --out DIR2 ...`. Every JSONL
+record, and every prep file, carries `locked_templates` next to `model`/`effort`; use a separate `--out` per arm.
+
 A run replays each case `--runs` times (default 3), fresh scratch state each pass, through
 `app/wa/luna/replay.py` with `at_turns` and the case's seeds. Output per case: `<id>.jsonl` (turn, run, bubbles,
 action, escalation, error, git sha, model, effort, file_unavailable) and `<id>.points.json` (history, message,

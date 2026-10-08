@@ -461,7 +461,7 @@ def test_single_message_turn_then_actual_reply_inserted_between_turns(tmp_path, 
     # AC#3 instrumentation: model/effort/git_sha on every line, timings/tokens null with a note
     # (luna_brain.turn() exposes neither)
     for line in lines:
-        assert line["model"] == C.LUNA_MODEL and line["effort"] == C.LUNA_EFFORT
+        assert line["model"] == C.LUNA_MODEL and line["effort"] == C.LUNA_EFFORT and line["locked_templates"] == C.LUNA_LOCKED_TEMPLATES
         assert line["git_sha"] == FAKE_SHA
         assert line["timings"] is None and line["tokens"] is None
         assert line["instrumentation_note"]
@@ -1105,6 +1105,7 @@ def test_capture_runs_the_earlier_turns_reads_the_file_and_stops_before_the_chos
     assert readers.classified == [CV_BYTES.decode("utf-8")]
     assert (result["turns_run"], result["errors"], result["truncated"]) == (3, 0, False)
     assert (result["git_sha"], result["model"], result["effort"]) == (FAKE_SHA, C.LUNA_MODEL, C.LUNA_EFFORT)
+    assert result["locked_templates"] == C.LUNA_LOCKED_TEMPLATES
     seed = result["seeds"][3]
     json.dumps(seed)                                                         # JSON-serialisable as returned
     # the card as a real thread holds it at turn 3: the file's classification and text, nothing dropped

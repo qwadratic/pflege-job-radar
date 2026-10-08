@@ -75,6 +75,7 @@ def test_eval_harness_runs_end_to_end_offline(tmp_path, monkeypatch):
     assert (prep["case"], prep["candidate_id"], prep["at_turns"], prep["prepared_at"]) == (
         "example", 9001, [2, 3], "2030-09-02T08:00:00+00:00")
     assert prep["git_sha"].startswith("0123") and prep["model"] == C.LUNA_MODEL and prep["effort"] == C.LUNA_EFFORT
+    assert prep["locked_templates"] == C.LUNA_LOCKED_TEMPLATES
     assert sorted(prep["points"]) == ["2", "3"] and prep["files"] == []
     assert prep["points"]["3"]["slots"]["_session_id"] == "fake-session"
     assert prep["points"]["2"]["asked"] == [] and prep["points"]["3"]["documents"] == []
@@ -94,6 +95,7 @@ def test_eval_harness_runs_end_to_end_offline(tmp_path, monkeypatch):
     records = [json.loads(l) for l in (out / "example.jsonl").read_text(encoding="utf-8").splitlines()]
     assert {(r["turn"], r["run"]) for r in records} == {(2, 1), (2, 2), (3, 1), (3, 2)}
     assert records[0]["bubbles"] == ["Verstanden, danke."] and records[0]["git_sha"].startswith("0123")
+    assert {r["locked_templates"] for r in records} == {C.LUNA_LOCKED_TEMPLATES}
     points_file = json.loads((out / "example.points.json").read_text(encoding="utf-8"))
     points = points_file["points"]
     assert points[1]["old_reply"] == ["Danke."] and points[1]["inbound"] == ["Ja"]
