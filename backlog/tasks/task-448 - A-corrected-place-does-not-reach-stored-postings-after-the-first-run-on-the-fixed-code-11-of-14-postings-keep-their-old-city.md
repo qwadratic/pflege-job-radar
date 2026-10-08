@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-07 14:44'
+updated_date: '2026-10-08 11:55'
 labels:
   - crawler-coverage
   - data-quality
@@ -26,3 +27,9 @@ Found 2026-10-07 by pflege-clawl while closing TASK-431.9. After PR #27 (place f
 - [ ] #2 The fix is at the source (ingest or resolve) or recorded as a one-off correction with ledger rows, with a red test first on the mirror or a fixture
 - [ ] #3 The 5 kbo and 6 umantis postings show the proposed place (or none) after the fix, measured live
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-10-08 FIRST TRACE (pflege-clawl, read only, one posting each). The two hypotheses of the description are NOT confirmed. umantis, posting 10470: its newest observation (2026-10-08 05:35, run 243, new code) itself carries city Ansbach, so the adapter output on the live page is still Ansbach, not Rothenburg; no overwrite problem, the fix of the site chip does not reach this live page (the executor test is green on the recorded mirror page): compare the live page with the mirror page, the text rung (tm: in/am/Standort + town) may win before the chip branch in career_crawl. kbo, posting 6622: its only observation is from 2026-09-24 (last_seen 2026-09-24), the posting is no longer on the board but still status open: the kbo head-office stamp is moot for the 3 open ones, the real defect is a posting that was not seen for 14 days and is not retired (not checked whether verify 244 looked at it). Re-scope: (1) umantis live-vs-mirror difference with a red test on a re-recorded page, (2) why an open posting last seen 14 days ago on a walked board is not retired, (3) the 5 kbo and 6 umantis postings. The ACs below stay valid for the outcome.
+<!-- SECTION:NOTES:END -->
