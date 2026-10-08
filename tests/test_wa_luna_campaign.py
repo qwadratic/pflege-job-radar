@@ -434,7 +434,7 @@ def test_a_consent_no_tap_is_never_a_decline(wa, monkeypatch):
 
 def test_a_decline_naming_another_land_on_a_campaign_thread_is_a_decline_not_the_region_question(wa, monkeypatch):
     """Review 2026-09-14: the out-of-scope shortcut ran before the model on a campaign thread (no region yet), sent
-    'käme Bayern für Sie infrage?' to a decliner and left the thread open for follow-up nudges."""
+    the Bavaria offer to a decliner and left the thread open for follow-up nudges."""
     _campaign()
     # TASK-386: see test_a_decline_sends_the_fixed_ack_once_marks_the_card_and_then_stays_silent.
     monkeypatch.setattr(RF, "_live_transport", lambda payload: json.dumps({"unambiguous_refusal": True}))
@@ -474,6 +474,49 @@ def test_a_land_typed_on_an_ordinary_thread_still_gets_the_locked_text(wa, monke
     model = Model(monkeypatch)
     [r] = _deliver(wa, _message("wamid.in.1", text="Ich suche eine Stelle in Hessen"))
     assert r["action"] == "out_of_scope_region" and wa.sent == [LB.P.OUT_OF_SCOPE_REGION_DE] and model.payloads == []
+
+
+def test_a_city_in_bayern_after_the_locked_region_text_reaches_the_model_with_that_text_and_sets_the_region(
+        wa, monkeypatch):
+    """Ivan, 2026-10-08: the locked text ends on an open question (which city in Bayern), not a yes/no.
+    The next message is an ordinary model turn that sees the locked text and its action, and the card
+    still holds the Land the candidate named until the model overwrites it."""
+    model = Model(monkeypatch, _out(bubbles=["Gern, in Nürnberg schaue ich mir das an."],
+                                    card_patch={"region": "Bayern", "city": "Nürnberg"}))
+    _deliver(wa, _message("wamid.in.1", text="Ich suche eine Stelle in Hessen"))
+    assert _thread()["slots"]["region"] == "hessen"
+    [r] = _deliver(wa, _message("wamid.in.2", text="Nürnberg"))
+    assert r["action"] == "reply_now_conversational" and len(model.payloads) == 1
+    [seen] = model.payloads[0]["outbound_since_last_turn"]
+    assert (seen["text"], seen["action"]) == (LB.P.OUT_OF_SCOPE_REGION_DE, "out_of_scope_region")
+    assert model.payloads[0]["card"]["region"] == "hessen"
+    card = _thread()["slots"]
+    assert (card["region"], card["city"]) == ("Bayern", "Nürnberg")
+
+
+def test_a_reply_blocked_twice_sends_nothing_flags_the_thread_and_is_finished_for_good(wa, monkeypatch, caplog):
+    """Ivan, 2026-10-08: no holding message. The turn ends as a recorded no_send: nothing goes out, the claim
+    is final (skipped_no_send), the pending row is gone, the thread is flagged for a human, and neither the
+    webhook nor catch-up asks the model again."""
+    link = "Hier die Übersicht: https://pflege-job-radar.example/jobs"
+    model = Model(monkeypatch, _out(bubbles=[link]), _out(bubbles=[link]))
+    with caplog.at_level("ERROR", logger="app.wa.luna_brain"):
+        [r] = _deliver(wa, _message("wamid.in.1", text="schicken Sie mir mal was"))
+    assert (r["status"], r["action"]) == ("nothing_to_send", "reply_blocked_escalated")
+    assert wa.sent == [] and len(model.payloads) == 2, "one rewrite, then nothing"
+    assert [m["direction"] for m in _rows()] == ["in"], "no outbound row of any kind"
+    card = _thread()["slots"]
+    assert card["_escalated"] is True and "LINK" in card["_escalate_reason"]
+    with ST.db() as c:
+        assert ST.reply_turn_claim_state(c, LEAD, "wamid.in.1") == ST.NO_SEND_STATE
+        assert REP.ball_for(c, LEAD) == "silent"
+        assert SR.phones_owed_a_reply(c) == [] and ST.pending_inbound(c, LEAD) == []
+    assert CU.run(client=wa) == [] and len(model.payloads) == 2, "catch-up must not call the model again"
+    assert CU.run(client=wa, phones=[LEAD])[0]["status"] == "no_send_recorded"
+    assert wa.sent == []
+    [record] = [rec for rec in caplog.records if "reply blocked" in rec.getMessage()]
+    assert record.levelname == "ERROR" and "LINK" in record.getMessage()
+    assert "pflege-job-radar" not in record.getMessage() and "schicken Sie" not in record.getMessage()
 
 
 class MediaMeta(FakeMeta):

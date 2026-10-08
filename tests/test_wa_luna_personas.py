@@ -815,7 +815,7 @@ def _assert_no_invented_clinic(bubbles, known_clinics, transcript):
 
 def _assert_city_answer_does_not_stall(d, transcript):
     assert d["bubbles"], f"the reply must not stall (empty bubbles): {transcript!r}"
-    assert d["bubbles"] != [LB.P.BLOCKED_REPLY_DE], f"grounding rejected the reply twice: {transcript!r}"
+    assert d["action"] != "reply_blocked_escalated", f"grounding rejected the reply twice: {transcript!r}"
     assert not d["slots"].get("_escalated"), (
         f"a resolvable multi-city answer should not need a human: {transcript!r} "
         f"reason={d['slots'].get('_escalate_reason')!r}")

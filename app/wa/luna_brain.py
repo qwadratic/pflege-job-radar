@@ -1552,8 +1552,10 @@ def _check(bubbles, max_bubbles=MAX_BUBBLES):
 # SAME session, so it still has its own tool results in context and rewrites rather than re-derives.
 # Its card_patch is deliberately ignored: the candidate's message has not changed, the first pass
 # already recorded what was learned from it, and a second reading of the same message is not a new
-# finding. If the rewrite breaks a rule too, the candidate gets P.BLOCKED_REPLY_DE and the thread is
-# flagged for a colleague -- an answer plus a human, never silence.
+# finding. If the rewrite breaks a rule too, NOTHING is sent (Ivan, 2026-10-08: no holding message --
+# it promised a colleague nobody keeps), the failure is logged at ERROR and the thread is flagged for a
+# human (card._escalated, GROUNDING_RULE_VIOLATED_TWICE). The turn ends as "replied with nothing", the
+# same path a model no_send takes: bubbles [], claim ST.NO_SEND_STATE, never retried by catch-up.
 #
 # ONE OF THE FIVE NO LONGER TAKES THIS PATH AT ALL (ROUND 5, grounding.py's module docstring): the
 # exhaustive-claim check ("these are all there are") flags instead of raising, so GR.check_reply's
@@ -1621,14 +1623,31 @@ class _NotClosed(AssertionError):
         self.reason = reason
 
 
+_RULE_LABEL_RE = re.compile(r"-- ([A-Z][A-Z ]*[A-Z]) \(")
+
+
+def _rule_of(exc):
+    """The checked rule an exception names, for the log -- never its message, which quotes the model's
+    bubble. GR.ReplyRejected texts carry the rule as "-- NO INVENTION (TASK-373)" / "-- LINK (...)";
+    anything that is not a rule at all (a timeout in the rewrite) is named by its type."""
+    if isinstance(exc, _NotClosed):
+        return "CLOSING"
+    if isinstance(exc, GR.ReplyRejected):
+        found = _RULE_LABEL_RE.search(str(exc))
+        return found.group(1) if found else "UNNAMED RULE"
+    if isinstance(exc, AssertionError):
+        return "STYLE"   # _check: bubble count / empty bubble
+    return type(exc).__name__
+
+
 def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches, max_bubbles=MAX_BUBBLES):
     """The bubbles that may actually be sent. -> {bubbles, named, evidence, action, escalate_reason,
     flagged}. ``bubbles`` is the model's RAW reply, unchecked (TASK-385, F2): the 1-2 bubble/
     non-empty style check (``_check``) now runs INSIDE ``_run``, below, so a violation on the FIRST
-    pass gets the exact same corrective-retry-then-holding-message contract as a GR.check_reply
+    pass gets the exact same corrective-retry-then-flagged-thread contract as a GR.check_reply
     guard -- before this it ran ahead of this function, in turn(), and raised straight out of the
-    turn uncaught: the one shape in this module that still went silent instead of an answer plus a
-    human (the contract every other checked rule here already honours).
+    turn uncaught: the one shape in this module that went down as an uncaught exception instead of a
+    flagged thread (the contract every other checked rule here already honours).
 
     ``max_bubbles`` (TASK-302 point 4): MAX_BUBBLES (2) on every ordinary turn; turn() passes 3 on the
     one turn build_warming fired on, and ONLY that one -- both the first pass and the corrective retry
@@ -1642,7 +1661,8 @@ def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches, max_bu
     reject the very sentence the call was made to ground.
 
     ``named`` is the grounded clinic names the sent text carries (the thread's evidence memory);
-    ``escalate_reason`` is set only on the path where a colleague has to take over.
+    ``escalate_reason`` is set only on the path where the reply was blocked twice: ``bubbles`` is then
+    EMPTY (nothing goes to the candidate) and the caller flags the thread for a human.
 
     ``flagged`` (ROUND 5, grounding.py's module docstring) is the sentence(s) the exhaustive-claim
     check suspected in whichever bubbles actually went out -- that check no longer blocks, so it
@@ -1690,6 +1710,7 @@ def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches, max_bu
     # share this same contract rather than needing a second except clause for it.
     except AssertionError as first:
         violation = first
+        first_rule = _rule_of(first)
         # A closing failure gets a hint, a grounding failure gets the violation: the model can see
         # its own first attempt either way (same session), so the hint does not need to restate it.
         payload = _closing_hint_payload() if isinstance(first, _NotClosed) else _corrective_payload(first)
@@ -1721,10 +1742,17 @@ def _checked_reply(cl, card, system_text, bubbles, evidence_of, branches, max_bu
             # invented clinic name is not a weak reply, it is a false one. Holding message + a human,
             # exactly as before -- now also when the retry failed for a non-rule reason.
             violation = second
-    return {"bubbles": [P.BLOCKED_REPLY_DE], "named": [], "evidence": evidence_of(),
+    # Ivan, 2026-10-08: a blocked reply sends NOTHING. The old holding message promised a colleague
+    # nobody keeps; the thread is flagged for a human instead (turn() records the escalation) and the
+    # turn ends as "replied with nothing" -- bubbles [], the claim finishes in ST.NO_SEND_STATE, so
+    # neither the webhook nor catch-up retries it. Loud, but the rule name only: the violation text
+    # quotes the model's bubble, and the candidate's words must not reach the log.
+    log.error("reply blocked, nothing sent to the candidate, thread flagged for a human: the first "
+              "reply broke %s, the second attempt %s", first_rule, _rule_of(violation))
+    return {"bubbles": [], "named": [], "evidence": evidence_of(),
             "action": "reply_blocked_escalated", "flagged": [],
-            "escalate_reason": f"two replies in a row broke a checked dialog rule, so the harness "
-                               f"answered with its holding message: {violation}"}
+            "escalate_reason": f"two replies in a row broke a checked dialog rule, so nothing was "
+                               f"sent to the candidate: {violation}"}
 
 
 def turn(text, thread, button_id=None, client=None, no_send=False):
@@ -2019,16 +2047,19 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         model_bubbles = bubbles
         action = checked["action"] or str(out.get("action") or "reply_now_conversational")
         if checked["escalate_reason"] and just_offered:
-            # The model's own text never reached the candidate, so nothing asked them for consent:
-            # leaving the flag set would attach the two buttons to the holding message, and would
-            # also make the NEXT turn's ask no longer "just offered", so the buttons would never
-            # appear again and consent could not be given at all.
+            # The model's own text never reached the candidate (a blocked reply sends nothing), so
+            # nothing asked them for consent: leaving the flag set would make the NEXT turn's ask no
+            # longer "just offered", so the buttons would never appear and consent could not be given
+            # at all.
             card["anonymous_send_offered"] = was_offered
             just_offered = False
         if just_offered:
             # The turn where the model just asked for the anonymized send: attach real, tappable
             # buttons rather than leaving consent to however the candidate happens to phrase "yes".
             buttons = list(CONSENT_BUTTONS)
+
+    # The reply was blocked twice (_checked_reply): bubbles are empty and the thread is flagged above.
+    blocked = checked is not None and bool(checked["escalate_reason"])
 
     # TASK-302 fix pass (review finding 3 / Ivan's design point d, 2026-09-25): what THIS turn's
     # shortlist (if any) actually did, recorded once here rather than in every branch above --
@@ -2042,7 +2073,9 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         candidate_ids = {c["posting_id"] for c in warming["candidates"]}
         pick, why = out.get("warming_pick"), out.get("warming_why")
         note = None
-        if not bubbles:
+        if blocked:
+            note = {"kind": "failure", "reason": checked["escalate_reason"], "at": turn_at}
+        elif not bubbles:
             note = {"kind": "failure", "reason": "no_send or empty bubbles", "at": turn_at}
         elif action in ("decline_ack", "explain_not_placeable"):
             note = {"kind": "failure", "at": turn_at,
@@ -2051,8 +2084,6 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
         elif checked is None:
             note = {"kind": "failure", "at": turn_at,
                     "reason": f"action={action!r} never reached the grounding check"}
-        elif checked["escalate_reason"]:
-            note = {"kind": "failure", "reason": checked["escalate_reason"], "at": turn_at}
         elif pick is not None and pick in candidate_ids and len(checked["bubbles"]) == 3:
             card[WARMING_KEY] = turn_at
             card[WARMING_PICK_KEY] = pick
@@ -2078,8 +2109,9 @@ def turn(text, thread, button_id=None, client=None, no_send=False):
 
     # TASK-379/380: the candidate asked for the original ads, so they go out NEXT TO whatever the
     # turn already had to say -- appended in code, from board rows, re-resolved against the live
-    # board at this moment. A declined thread stays silent; everything else answers both.
-    if wants_sources and not card.get("declined"):
+    # board at this moment. A declined thread stays silent, and so does a blocked reply (nothing at all
+    # goes out then, Ivan 2026-10-08); everything else answers both.
+    if wants_sources and not card.get("declined") and not blocked:
         live, gone = SRC.live_sources(card.get(TEST_SOURCES_KEY) or [])
         bubbles = [*bubbles, SRC.link_bubble(live, gone)]
         model_bubbles = bubbles

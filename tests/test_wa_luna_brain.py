@@ -90,6 +90,27 @@ def test_out_of_scope_region_never_reaches_the_model(luna):
     assert "Bayern" in d["bubbles"][0] and d["slots"]["region"] == "berlin"
 
 
+def test_the_locked_texts_are_the_ones_ivan_approved_on_2026_10_08():
+    """Character for character (em dash U+2014 in the refusal, the emoji in the region text). The
+    holding message of a blocked reply is gone: nothing is sent then (see the dialog-rule tests)."""
+    assert LB.P.REJECT_BODY_DE == (
+        "Vielen Dank für Ihre Nachricht. Aktuell können wir Ihnen leider nicht helfen, da uns eine "
+        "anerkannte Pflegefachkraft-Qualifikation (bzw. ein Anerkennungspfad) fehlt. Falls sich Ihre "
+        "Anerkennung später ändert, melden Sie sich gern \u2014 alles Gute für Sie!")
+    assert LB.P.OUT_OF_SCOPE_REGION_DE == (
+        "Vielen Dank \U0001F642 Aktuell zeige ich offene Pflegestellen an bayerischen Kliniken. Für ein "
+        "anderes Bundesland kann ich gerade nichts Konkretes anbieten. Welche Stadt in Bayern "
+        "interessiert Sie?")
+    assert not hasattr(LB.P, "BLOCKED_REPLY_DE")
+
+
+def test_the_model_is_told_how_to_read_the_answer_to_the_locked_region_text():
+    rule = _rule("OUR OUTBOUND")
+    assert "The out_of_scope_region text offers Bavaria and asks which Bavarian city interests them" in rule
+    assert "region=Bayern and that city in card_patch" in rule
+    assert "a bare Ja only means Bavaria is fine" in rule
+
+
 def test_out_of_scope_region_is_whole_word(luna):
     assert LB.named_non_bavaria_land("ich mag Hessendorf") is None
     assert LB.named_non_bavaria_land("NRW-Fan-Artikel") is None
@@ -1116,10 +1137,10 @@ def test_too_many_bubbles_is_a_corrective_retry_not_an_exception(luna):
     assert d["action"] == "reply_after_correction" and "_escalated" not in d["slots"]
 
 
-def test_a_persistent_too_many_bubbles_violation_ends_in_the_holding_message_not_silence(luna):
+def test_a_persistent_too_many_bubbles_violation_sends_nothing_and_flags_the_thread(luna):
     out = _out(bubbles=["one", "two", "three"])
     d = LB.turn("Hallo", luna, client=fake_client(out))
-    assert d["bubbles"] == [LB.P.BLOCKED_REPLY_DE]
+    assert d["bubbles"] == []
     assert d["action"] == "reply_blocked_escalated"
     assert d["slots"]["_escalated"] is True
 
@@ -1139,10 +1160,10 @@ def test_an_empty_bubble_is_a_corrective_retry_not_an_exception(luna):
     assert d["action"] == "reply_after_correction" and "_escalated" not in d["slots"]
 
 
-def test_a_persistent_empty_bubble_violation_ends_in_the_holding_message_not_silence(luna):
+def test_a_persistent_empty_bubble_violation_sends_nothing_and_flags_the_thread(luna):
     out = _out(bubbles=[""])
     d = LB.turn("Hallo", luna, client=fake_client(out))
-    assert d["bubbles"] == [LB.P.BLOCKED_REPLY_DE]
+    assert d["bubbles"] == []
     assert d["action"] == "reply_blocked_escalated"
     assert d["slots"]["_escalated"] is True
 

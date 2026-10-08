@@ -173,7 +173,10 @@ RULES = [
     "being there ('ich bin (noch) da/hier', 'bin für Sie da'); never a yes to your earlier open question, never a "
     "card fact (no qualification_path, urkunde_status, housing or city from it); ask your still-open "
     "question again as a plain yes/no. Only a reply that itself states a fact sets it. A yes to a "
-    "campaign template records only what CAMPAIGN says.",
+    "campaign template records only what CAMPAIGN says. The out_of_scope_region text offers Bavaria and "
+    "asks which Bavarian city interests them (card.region then holds the Land they named, not Bayern): a "
+    "city in Bayern in the next message answers it -- region=Bayern and that city in card_patch; a bare Ja "
+    "only means Bavaria is fine -- region=Bayern, then ask for the city as an open question.",
     "CAMPAIGN (TASK-203): card.campaign means {client} wrote to this number first with a WhatsApp "
     "template, because the candidate had contacted us on this number before; campaign.rendered_text is "
     "exactly what they saw (header, body, [buttons]), campaign.sent_at when. Their reply answers it. Not "
@@ -852,27 +855,19 @@ HONEST_AI_IDENTITY_DE = HONEST_AI_IDENTITY_DE.replace("{client}", _CLIENT_NAME)
 # apps/connectors/candidate_bayern_housing_offer.py).
 DECLINE_ACK_DE = "Alles klar, vielen Dank für die Rückmeldung. Falls sich das ändert, schreiben Sie mir gern."
 
+# Locked refusal. Closing sentence is the old bot's own (Ivan, 2026-10-08).
 REJECT_BODY_DE = (
     "Vielen Dank für Ihre Nachricht. Aktuell können wir Ihnen leider nicht helfen, da uns "
-    "eine anerkannte Pflegefachkraft-Qualifikation (bzw. ein Anerkennungspfad) fehlt. Alles "
-    "Gute für Sie!"
+    "eine anerkannte Pflegefachkraft-Qualifikation (bzw. ein Anerkennungspfad) fehlt. Falls "
+    "sich Ihre Anerkennung später ändert, melden Sie sich gern — alles Gute für Sie!"
 )
 
+# Locked, approved verbatim by Ivan 2026-10-08. Ends on an open city question, not a yes/no: the candidate's
+# next message is a Bavarian city (or a bare Ja), read by the model (OUR OUTBOUND rule).
 OUT_OF_SCOPE_REGION_DE = (
     "Vielen Dank 🙂 Aktuell zeige ich offene Pflegestellen an bayerischen Kliniken. Für ein "
-    "anderes Bundesland kann ich gerade nichts Konkretes anbieten — käme Bayern für Sie "
-    "infrage?"
-)
-
-# TASK-375: what the candidate gets when the model broke one of Ivan's rules twice in a row
-# (app/wa/luna/grounding.py:check_reply, then once more after being told exactly what it broke).
-# A rejected reply must never become silence -- before this, a truthful turn that tripped the check
-# left the candidate hearing nothing at all and the thread stalled. This says plainly that a human
-# is taking over, which is what the accompanying card._escalated actually causes, and promises no
-# time (the follow-up nudges are a separate mechanism, see DOCUMENT ASK).
-BLOCKED_REPLY_DE = (
-    "Entschuldigen Sie bitte — da will ich Ihnen nichts Falsches sagen. Eine Kollegin schaut "
-    "sich Ihre Frage an und meldet sich hier bei Ihnen."
+    "anderes Bundesland kann ich gerade nichts Konkretes anbieten. Welche Stadt in Bayern "
+    "interessiert Sie?"
 )
 
 # TASK-439, approved verbatim by Ivan 2026-10-06: the status message to a candidate whose profile went out

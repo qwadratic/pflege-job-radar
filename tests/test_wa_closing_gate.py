@@ -16,7 +16,6 @@ import pytest
 
 from app.wa import luna_brain as LB
 from app.wa.luna import closing_gate as CG
-from app.wa.luna import prompts as P
 
 from .test_wa_luna_dialog_rules import _out, fake_client, small  # noqa: F401  (small is a fixture)
 
@@ -139,7 +138,7 @@ def test_a_reply_that_trails_off_is_retried_with_a_hint_not_with_the_violation(s
 def test_a_second_reply_that_still_trails_off_is_sent_anyway_and_nobody_is_called(small, monkeypatch):
     """Ivan, explicit: "нет такого, что мы каждое сообщение проверяем на гейт, а потом зовем
     человека". A weak answer is still an answer to what the candidate asked; it is not a false one.
-    So: no holding message, no escalation on the card -- one ERROR line and the reply goes."""
+    So: no block, no escalation on the card -- one ERROR line and the reply goes."""
     _gate(monkeypatch, False, False)
 
     def reply(system, user, session_id):
@@ -148,15 +147,15 @@ def test_a_second_reply_that_still_trails_off_is_sent_anyway_and_nobody_is_calle
     d = LB.turn("Wo ist die Klinik?", {"slots": {"region": "Bayern"}, "asked": []},
                 client=fake_client(reply))
 
-    assert d["bubbles"] == ["Das ist leider ganz unterschiedlich."]
-    assert d["bubbles"] != [P.BLOCKED_REPLY_DE], "the holding message is for a false reply, not a weak one"
+    assert d["bubbles"] == ["Das ist leider ganz unterschiedlich."], "a block is for a false reply, not a weak one"
+    assert d["action"] != "reply_blocked_escalated"
     assert not d["slots"].get("_escalated")
     assert not d["slots"].get("_escalate_reason")
 
 
 def test_a_grounding_violation_still_escalates_after_two_strikes(small, monkeypatch):
     """The regression guard for the change above: relaxing the CLOSING ending must not relax the
-    grounding ending. An invented link twice running still buys a holding message and a human."""
+    grounding ending. An invented link twice running still blocks the turn and flags a human."""
     _gate(monkeypatch, True, True)
 
     def reply(system, user, session_id):
@@ -165,7 +164,7 @@ def test_a_grounding_violation_still_escalates_after_two_strikes(small, monkeypa
     d = LB.turn("schicken Sie mir mal was", {"slots": {"region": "Bayern"}, "asked": []},
                 client=fake_client(reply))
 
-    assert d["bubbles"] == [P.BLOCKED_REPLY_DE]
+    assert d["bubbles"] == []
     assert "LINK" in d["slots"]["_escalate_reason"] and d["slots"]["_escalated"] is True
 
 
@@ -272,7 +271,7 @@ def test_a_closing_failure_whose_rewrite_breaks_the_style_rule_is_not_a_groundin
     d = LB.turn("Wo ist die Klinik?", {"slots": {"region": "Bayern"}, "asked": []},
                 client=fake_client(reply))
     assert d["bubbles"] == ["Das ist leider ganz unterschiedlich."]
-    assert d["bubbles"] != [P.BLOCKED_REPLY_DE]
+    assert d["action"] != "reply_blocked_escalated"
     assert not d["slots"].get("_escalated")
 
 
@@ -309,5 +308,5 @@ def test_a_grounding_failure_whose_retry_times_out_still_calls_a_human(small, mo
 
     d = LB.turn("schicken Sie mir mal was", {"slots": {"region": "Bayern"}, "asked": []},
                 client=fake_client(reply))
-    assert d["bubbles"] == [P.BLOCKED_REPLY_DE]
+    assert d["bubbles"] == []
     assert d["slots"]["_escalated"] is True

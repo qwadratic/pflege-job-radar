@@ -162,13 +162,14 @@ and the three things the audit of 2026-09-21 proved were missing from them:
    applied to every model-written bubble; a hit is a violation like LINK, with the same one corrective
    retry. Ivan asked for it explicitly (the one exception to "no hand-written German phrase lists").
 
-A REJECTED REPLY IS NOT SILENCE (audit C). ``check_reply`` raises for the four BLOCKING rules (NO
-INVENTION, COUNT's figure check, STALE, VOLUME with its remainder/BRANCHES obligation);
-app/wa/luna_brain.py:_checked_reply catches it, tells the model which rule it broke and lets it write
-the turn once more against freshly read evidence, and on a second violation sends
-prompts.BLOCKED_REPLY_DE and flags the thread for a human. Before that the raise came straight out of
-turn(): nothing was sent at all, and catch-up re-drove the same turn into the same wording. The
-exhaustive-claim rule does not raise at all (ROUND 5 below): it appends to ``check_reply``'s
+A REJECTED REPLY IS RETRIED ONCE, THEN THE THREAD IS FLAGGED (audit C; Ivan, 2026-10-08). ``check_reply``
+raises for the four BLOCKING rules (NO INVENTION, COUNT's figure check, STALE, VOLUME with its
+remainder/BRANCHES obligation); app/wa/luna_brain.py:_checked_reply catches it, tells the model which
+rule it broke and lets it write the turn once more against freshly read evidence, and on a second
+violation sends nothing to the candidate, logs the rule at ERROR and flags the thread for a human
+(the turn ends in ST.NO_SEND_STATE like a model no_send, so catch-up does not re-drive it). Before
+that the raise came straight out of turn(): the pending row kept the error and catch-up re-drove the
+same turn into the same wording. The exhaustive-claim rule does not raise at all (ROUND 5 below): it appends to ``check_reply``'s
 ``flagged`` out-list instead, the reply goes out, and the thread is flagged the same way.
 
 SPELLING IS NOT IDENTITY (audit A3/B/C). Every comparison here runs over ``fold``: case, umlauts and
@@ -1488,7 +1489,7 @@ def _promise_re():
 # told otherwise waits for nothing. Ivan asked for a regex here explicitly; it is kept to the shapes of that
 # promise in German (primary), Russian and English (replies follow the candidate's language since the
 # LANGUAGE rule), in this one constant, and applied by check_reply to every model-written bubble.
-# NOT checked: the texts the harness sends itself (BLOCKED_REPLY_DE, MEDIA_REPLY, HONEST_AI_IDENTITY_DE).
+# NOT checked: the texts the harness sends itself (MEDIA_REPLY, HONEST_AI_IDENTITY_DE).
 PROMISE_RE = _promise_re()
 
 
@@ -1636,9 +1637,11 @@ def check_reply(bubbles, allowed, board=None, *, deniable=(), counts=(), counts_
     INVENTION, COUNT's figure check, STALE, VOLUME with its remainder/BRANCHES obligation), and for
     LINK and PROMISE (a hand-off promise, ``PROMISE_RE``) on any single bubble.
     app/wa/luna_brain.py:turn catches it, tells the model exactly what it broke and lets it write the
-    turn once more; a second violation sends the harness's own short holding reply and flags the
-    thread for a human. It never becomes silence -- that was the cost of this check before (four
-    shapes of truthful German died and the candidate heard nothing, audit C).
+    turn once more; a second violation sends NOTHING to the candidate (Ivan, 2026-10-08: the old
+    holding reply promised a colleague nobody keeps), logs the rule at ERROR and flags the thread for
+    a human. The turn ends as "replied with nothing", never as an uncaught raise -- the cost of this
+    check before (four shapes of truthful German raised out of turn() and catch-up re-drove them,
+    audit C).
 
     ``flagged`` is different (ROUND 5, 2026-09-22, module docstring): the exhaustive-claim check --
     "these are all there are" -- no longer raises. When the caller passes a list, the sentence it
