@@ -300,3 +300,14 @@ def test_media_roots_must_be_readable_directories(tmp_path):
     assert RUN.check_media_roots([tmp_path]) == [tmp_path]
     with pytest.raises(SystemExit, match="is not a directory"):
         RUN.check_media_roots([tmp_path / "nope"])
+
+
+def test_the_fixture_board_has_small_town_postings_with_and_without_housing():
+    jobs, clinics = RUN.fixture_board()
+    assert len(jobs) == 20 and [j["posting_id"] for j in jobs] == list(range(1, 21))
+    assert [j["city"] for j in jobs[:14]] == ["München"] * 4 + ["Augsburg"] * 2 + ["Nürnberg"] * 2 + [
+        "Regensburg"] * 2 + ["Würzburg"] * 2 + ["Bayreuth", "Landshut"], "the first 14 rows are untouched"
+    small = [j for j in jobs[14:] if j["city"] in ("Füssen", "Landsberg am Lech")]
+    assert len(small) == 4 and {bool(j["enr_housing"]) for j in small} == {True, False}
+    assert {c["town"] for c in clinics} >= {"Füssen", "Kempten (Allgäu)", "Landsberg am Lech"}
+    assert len({c["clinic_id"] for c in clinics}) == len(clinics)

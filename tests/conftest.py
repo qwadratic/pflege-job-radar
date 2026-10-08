@@ -239,6 +239,29 @@ def _closing_gate_offline(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _city_resolve_offline(request, monkeypatch, tmp_path):
+    """app/wa/luna/city_resolve.py reads every posting's town string through a Haiku `claude -p` subturn
+    (Ivan 2026-10-08), and every posting row the Luna tools return carries a size from it. No offline test
+    spawns one: the subturn's transport answers each text as its own municipality ('Weiden' -> ['Weiden']),
+    through the real prompt build, answer validation and cache. The cache lives in the test's tmp_path. A test
+    that needs other answers patches ``city_resolve._runner`` itself (tests/test_wa_luna_city_resolve.py:
+    ``fake_model``); the `llm`-marked test keeps the real model."""
+    if request.node.get_closest_marker("llm"):
+        return
+    import subprocess
+
+    city_resolve = importlib.import_module("app.wa.luna.city_resolve")
+    monkeypatch.setenv("WA_LUNA_CITY_CACHE", str(tmp_path / "city_cache.json"))
+
+    def identity_model(argv, input, **kwargs):
+        items = json.loads(input.split("<data>\n", 1)[1].rsplit("\n</data>", 1)[0])
+        answer = {"results": [{"id": item["id"], "municipalities": [item["text"]]} for item in items]}
+        return subprocess.CompletedProcess(argv, 0, json.dumps({"structured_output": answer, "usage": {}}), "")
+
+    monkeypatch.setattr(city_resolve, "_runner", identity_model)
+
+
+@pytest.fixture(autouse=True)
 def _wa_background_idle(monkeypatch):
     """app.wa.api finishes webhook turns in a background thread (TASK-341). Wait for it before this test's
     monkeypatches (SQLite path, Meta client, tokens) are undone, so no job runs against the real config."""

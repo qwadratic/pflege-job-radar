@@ -112,18 +112,27 @@ class _Patches:
 _CLINICS = {"München": ("Oberbayern", "Klinik Isarblick"), "Augsburg": ("Schwaben", "Klinik Lechtal"),
             "Nürnberg": ("Mittelfranken", "Klinik Pegnitzblick"), "Regensburg": ("Oberpfalz", "Klinik Donaubogen"),
             "Würzburg": ("Unterfranken", "Klinik Mainblick"), "Bayreuth": ("Oberfranken", "Klinik Fichtelhöhe"),
-            "Landshut": ("Niederbayern", "Klinik Isartor")}
+            "Landshut": ("Niederbayern", "Klinik Isartor"),
+            # synthetic small/mid towns (real geography, invented clinics) so "kleine Stadt" can be answered:
+            # Kempten is a big city (>= 50,000), Füssen and Landsberg am Lech are small.
+            "Füssen": ("Schwaben", "Klinik Alpenblick"), "Kempten (Allgäu)": ("Schwaben", "Klinik Illerstein"),
+            "Landsberg am Lech": ("Oberbayern", "Klinik Lechrain")}
+_SYNTHETIC_PLZ = {"Füssen": "87629", "Kempten (Allgäu)": "87435", "Landsberg am Lech": "86899"}
 _PLAN = [("München", "pflegefachkraft", "Intensiv/IMC", True), ("München", "pflegefachkraft", "Innere Medizin", True),
          ("München", "fachpflege", "Anästhesie", False), ("München", "ota_ata", "OP", False),
          ("Augsburg", "pflegefachkraft", "Innere Medizin", True), ("Augsburg", "pflegefachkraft", "Intensiv/IMC", False),
          ("Nürnberg", "pflegefachkraft", "Chirurgie/Orthopädie", False), ("Nürnberg", "pflegefachkraft", "Innere Medizin", False),
          ("Regensburg", "ota_ata", "OP", False), ("Regensburg", "ota_ata", "Anästhesie", False),
          ("Würzburg", "hebamme", "Geburtshilfe", False), ("Würzburg", "pflegefachkraft", "Intensiv/IMC", True),
-         ("Bayreuth", "leitung", "Chirurgie/Orthopädie", False), ("Landshut", "pflegefachkraft", "Innere Medizin", False)]
+         ("Bayreuth", "leitung", "Chirurgie/Orthopädie", False), ("Landshut", "pflegefachkraft", "Innere Medizin", False),
+         # rows 15+: the synthetic small-town postings, some with housing, some without
+         ("Füssen", "pflegefachkraft", "Innere Medizin", True), ("Füssen", "pflegefachkraft", "Chirurgie/Orthopädie", False),
+         ("Kempten (Allgäu)", "pflegefachkraft", "Intensiv/IMC", True), ("Kempten (Allgäu)", "ota_ata", "OP", False),
+         ("Landsberg am Lech", "pflegefachkraft", "Innere Medizin", False), ("Landsberg am Lech", "hebamme", "Geburtshilfe", True)]
 
 
 def _clinic_id(town):
-    return "k-" + town.lower().replace("ü", "ue").replace("ö", "oe").replace("ä", "ae")
+    return "k-" + re.sub(r"[^a-z0-9]+", "-", town.lower().replace("ü", "ue").replace("ö", "oe").replace("ä", "ae")).strip("-")
 
 
 def fixture_board():
@@ -134,6 +143,9 @@ def fixture_board():
              "employment_types": ["vollzeit"], "enr_housing": housing, "verify_status": "live", "status": "open",
              "first_published": "2026-09-01", "fresh": True, "source_url": f"https://example.org/job/{i + 1}"}
             for i, (town, role, dept, housing) in enumerate(_PLAN)]
+    for j in jobs:
+        if j["city"] in _SYNTHETIC_PLZ:
+            j["plz"] = _SYNTHETIC_PLZ[j["city"]]
     clinics = []
     for town, (bezirk, name) in _CLINICS.items():
         n = sum(1 for j in jobs if j["city"] == town)

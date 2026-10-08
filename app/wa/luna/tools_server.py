@@ -85,6 +85,7 @@ from ... import search as SE
 from .. import bridge as BR
 from .. import config as C
 from .. import slots as SL
+from . import city_resolve as CR
 from . import expose_shrink as ES
 from .board_vocabulary import LIVE_BASE, city_of, clinic_key, clinic_name_of, departments_of, vocabulary_lines
 
@@ -103,6 +104,11 @@ except ImportError:
     CT = None
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# Ivan 2026-10-08: a city is BIG at >= 50,000 inhabitants, every other city on the board is SMALL. The table is
+# a committed data file (source and date inside it); refresh steps in docs/whatsapp.md.
+CITY_SIZES = json.loads((Path(__file__).parent / "city_sizes.json").read_text(encoding="utf-8"))
+SIZES = ("big", "small")
 
 mcp = MCPServer("jobs")   # same name as luna_brain.MCP_SERVER_NAME; model-visible, no brand
 
@@ -176,7 +182,7 @@ def _job_row(r):
     # no tool at all, so "gibt es eine Kita?" could only be escalated to a human.
     return {"posting_id": r.get("posting_id"), "title": r.get("title"),
             "clinic_id": r.get("clinic_id"), "clinic_name": r.get("clinic_name") or r.get("employer"),
-            "city": D.town_of(r), "department": ", ".join(departments_of(r)) or None,
+            "city": D.town_of(r), "size": _size_of(r), "department": ", ".join(departments_of(r)) or None,
             "regierungsbezirk": r.get("regierungsbezirk"), "housing": bool(r.get("enr_housing")),
             "housing_kind": D.housing_kind(r), "childcare": r.get("enr_childcare"),
             "employment_types": r.get("employment_types")}
@@ -184,6 +190,34 @@ def _job_row(r):
 
 _city = city_of                 # one clinic/city identity for every count here and in the vocabulary
 _clinic_name = clinic_name_of
+
+
+def _canon_of(rows):
+    """{town string: [canonical municipalities]} for the posting towns (D.town_of) of these rows -- the ONE seam
+    the size filter reads (city_resolve: a Haiku subturn, cached; strings it has not seen go to the model in
+    batches, with the postal codes and Regierungsbezirke of the postings that carry them as context). A model
+    failure is a ToolError: nothing falls back to 'small'."""
+    context = {}
+    for r in rows:
+        s = D.town_of(r)
+        if s:
+            c = {"plz": r.get("plz"), "regierungsbezirk": r.get("regierungsbezirk")}
+            if c not in context.setdefault(s, []):
+                context[s].append(c)
+    try:
+        return CR.canonical_cities(list(context), context)
+    except CR.CityResolveError as exc:
+        raise ToolError(f"the city of these postings could not be read ({exc}); nothing was filtered or sized. "
+                        f"Internal tool note, never quote it to the candidate.") from exc
+
+
+def _size_in(canon, r):
+    """'big' when ANY municipality the posting's town string names is in the city table, else 'small'."""
+    return "big" if CR.is_big(canon.get(D.town_of(r), [])) else "small"
+
+
+def _size_of(r):
+    return _size_in(_canon_of([r]), r)
 
 
 def _limit(value, default=10):
@@ -341,7 +375,7 @@ def _resolve_city(word, known, what):
     return _resolve_one_city(word, known, what)
 
 
-def _town_rows(rows, town):
+def _town_rows(rows, town, size=""):
     """The rows that are IN this town (app/data.py:in_towns -> town_of: the posting's own city, the
     clinic's registry town only when the posting has none).
 
@@ -350,11 +384,18 @@ def _town_rows(rows, town):
     postings in Bruckberg, Himmelkron, Obernzenn and Erlangen; and it compares one exact lowercased
     string, which cannot take the several board spellings one town has ('Neuburg an der Donau' and
     'Neuburg/Donau' are 1 and 50 postings in the same town, and a town name may itself contain a comma,
-    the separator that parameter splits on)."""
-    return [r for r in rows if D.in_towns(r, town["spellings"])] if town else rows
+    the separator that parameter splits on).
+
+    ``size`` ('big' | 'small' | '') narrows to postings in big or small cities (_size_of)."""
+    rows = [r for r in rows if D.in_towns(r, town["spellings"])] if town else rows
+    if not size:
+        return rows
+    canon = _canon_of(rows)
+    return [r for r in rows if _size_in(canon, r) == size]
 
 
-def _job_filters(city="", department="", role_class="", regierungsbezirk="", housing=False, employment_type="", q=""):
+def _job_filters(city="", department="", role_class="", regierungsbezirk="", housing=False, employment_type="", q="",
+                 size=""):
     """(the GET /api/jobs query for these arguments, the resolved town or None), with the city and
     department words read the way the rest of the harness reads them. Shared by every posting tool below so
     the general search and the preset ones can never disagree about what a candidate's word means.
@@ -371,6 +412,9 @@ def _job_filters(city="", department="", role_class="", regierungsbezirk="", hou
     The town is returned beside the query rather than inside it because a town is not one string -- see
     _town_rows, which is the other half of every call here."""
     filters, town = dict(LIVE_BASE), None
+    if size and size not in SIZES:
+        raise ToolError(f"size {size!r} is not a city size; allowed values: {', '.join(SIZES)} (or empty for "
+                        f"both). Internal tool note, never quote it to the candidate.")
     role_class = role_class or _turn_role_class()
     if city:
         town = _resolve_city(city, _cities_with_postings(), "open postings")
@@ -406,10 +450,11 @@ def _job_filters(city="", department="", role_class="", regierungsbezirk="", hou
     return filters, town
 
 
-def _job_rows(city="", department="", role_class="", regierungsbezirk="", housing=False, employment_type="", q=""):
+def _job_rows(city="", department="", role_class="", regierungsbezirk="", housing=False, employment_type="", q="",
+              size=""):
     """(the matching live-verified postings, the resolved town or None) -- _job_filters plus _town_rows."""
-    filters, town = _job_filters(city, department, role_class, regierungsbezirk, housing, employment_type, q)
-    return _town_rows(D.filter_jobs(filters), town), town
+    filters, town = _job_filters(city, department, role_class, regierungsbezirk, housing, employment_type, q, size)
+    return _town_rows(D.filter_jobs(filters), town, size), town
 
 
 # --- board snapshot, primed from the parent -----------------------------------------------------
@@ -493,7 +538,7 @@ def apply_board_vocabulary():
 # --- board queries ---------------------------------------------------------------------------
 @mcp.tool()
 def search_postings(city: str = "", department: str = "", role_class: str = "", regierungsbezirk: str = "",
-                     housing: bool = False, employment_type: str = "", q: str = "") -> dict:
+                     housing: bool = False, employment_type: str = "", q: str = "", size: str = "") -> dict:
     """Search open Pflege postings on the board. Same filters as GET /api/jobs. Call this whenever
     the candidate names a city, department or region that market_snapshot did not already cover --
     do not guess or say you have no data when a live search would answer it directly. Every filter the
@@ -503,11 +548,14 @@ def search_postings(city: str = "", department: str = "", role_class: str = "", 
     offer to narrow the search with a criterion the shown rows actually differ in; never a board link.
     With a city it also returns town.board_spellings -- how the board writes the town you asked for
     ("Lohr am Main" -> 'Lohr a. Main'). Name the town that way. Every posting returned is IN that town by
-    its own ad, never one filed there because its clinic's head office is."""
+    its own ad, never one filed there because its clinic's head office is.
+    size="big" or "small" keeps only postings in big cities (50,000 inhabitants or more) or small ones
+    (fewer than 50,000); every row says which it is in its size field. Use size="small" for a candidate
+    who wants a small town ("kleine Stadt", "ländlich")."""
     args = {"city": city, "department": department, "role_class": role_class, "regierungsbezirk": regierungsbezirk,
-            "housing": housing, "employment_type": employment_type, "q": q}
+            "housing": housing, "employment_type": employment_type, "q": q, "size": size}
     _log_call("search_postings", args)
-    rows, town = _job_rows(city, department, role_class, regierungsbezirk, housing, employment_type, q)
+    rows, town = _job_rows(city, department, role_class, regierungsbezirk, housing, employment_type, q, size)
     return _listing(rows, town=town)
 
 
@@ -562,21 +610,25 @@ def list_clinics_with_housing(city: str = "", regierungsbezirk: str = "", limit:
 
 @mcp.tool()
 def list_cities_with_postings(department: str = "", housing: bool = False, regierungsbezirk: str = "",
-                               limit: int = 15) -> list[dict]:
+                               limit: int = 15, size: str = "") -> list[dict]:
     """Which cities actually have open postings -- for a department, or with a flat (housing=true), or at
     all -- most postings first. Call this when the candidate is flexible about where, or when their own
     city has nothing for what they need and you would otherwise have to name a town from memory: every
-    city here is one the board has postings in right now."""
-    args = {"department": department, "housing": housing, "regierungsbezirk": regierungsbezirk, "limit": limit}
+    city here is one the board has postings in right now. Each city carries size: "big" = 50,000
+    inhabitants or more, "small" = fewer than 50,000. size="small" or "big" lists only those -- the way to
+    offer small towns to a candidate who does not want a big city."""
+    args = {"department": department, "housing": housing, "regierungsbezirk": regierungsbezirk, "limit": limit,
+            "size": size}
     _log_call("list_cities_with_postings", args)
-    rows, _ = _job_rows(department=department, regierungsbezirk=regierungsbezirk, housing=housing)
+    rows, _ = _job_rows(department=department, regierungsbezirk=regierungsbezirk, housing=housing, size=size)
     by_city = {}
+    canon = _canon_of(rows)
     for r in rows:
         city = _city(r)
         if not city:
             continue
-        entry = by_city.setdefault(city, {"city": city, "regierungsbezirk": r.get("regierungsbezirk"),
-                                          "postings": 0, "clinics": set()})
+        entry = by_city.setdefault(city, {"city": city, "size": _size_in(canon, r),
+                                          "regierungsbezirk": r.get("regierungsbezirk"), "postings": 0, "clinics": set()})
         entry["postings"] += 1
         if clinic_key(r):
             entry["clinics"].add(clinic_key(r))
@@ -587,7 +639,7 @@ def list_cities_with_postings(department: str = "", housing: bool = False, regie
 
 @mcp.tool()
 def count_postings(city: str = "", department: str = "", role_class: str = "", regierungsbezirk: str = "",
-                    housing: bool = False, employment_type: str = "") -> dict:
+                    housing: bool = False, employment_type: str = "", size: str = "") -> dict:
     """How many open postings, distinct clinics and cities match these criteria, plus how many of them say
     anything about Wohnen. Call this for a number ("wie viele Stellen haben Sie in X") instead of counting
     rows from a search yourself, and always with at least one filter: the board-wide total is already in
@@ -600,11 +652,12 @@ def count_postings(city: str = "", department: str = "", role_class: str = "", r
     tool (search_postings, search_postings_with_housing, list_cities_with_postings,
     list_clinics_with_housing too), so a bare city/department filter, on any of them, already comes back
     scoped to what this candidate qualifies for -- pass a different role_class only to ask about a role
-    other than theirs. Repeated here explicitly only because this tool also needs it BEFORE calling
+    other than theirs. size="big" (50,000 inhabitants or more) or "small" (fewer than 50,000) counts only
+    postings in such cities. Repeated here explicitly only because this tool also needs it BEFORE calling
     _job_filters, to decide whether any filter was given at all."""
     role_class = role_class or _turn_role_class()
     args = {"city": city, "department": department, "role_class": role_class, "regierungsbezirk": regierungsbezirk,
-            "housing": housing, "employment_type": employment_type}
+            "housing": housing, "employment_type": employment_type, "size": size}
     if not any(args.values()):
         # TASK-213 review: live runs kept calling this with every parameter empty to re-derive a number the
         # payload already carries -- two seconds of the turn for nothing, and the prompt rule saying so did
@@ -612,21 +665,53 @@ def count_postings(city: str = "", department: str = "", role_class: str = "", r
         # so the turn just answers; the log keeps the attempt, marked, so a test can see it was not answered.
         _log_call("count_postings", {**args, "refused": "no filter"})
         raise ToolError("count_postings needs at least one filter (city, department, role_class, "
-                        "regierungsbezirk, housing, employment_type). The board-wide total is already in "
+                        "regierungsbezirk, housing, employment_type, size). The board-wide total is already in "
                         "this turn's market_snapshot.open_jobs -- answer that from the payload, no call.")
     _log_call("count_postings", args)
-    filters, town = _job_filters(city, department, role_class, regierungsbezirk, housing, employment_type)
-    rows = _town_rows(D.filter_jobs(filters), town)
+    filters, town = _job_filters(city, department, role_class, regierungsbezirk, housing, employment_type, size=size)
+    rows = _town_rows(D.filter_jobs(filters), town, size)
     kinds = [D.housing_kind(r) for r in rows]
     counted = {"postings": len(rows), "clinics": len({clinic_key(r) for r in rows if clinic_key(r)}),
                "cities": len({_city(r) for r in rows if _city(r)}),
                "with_housing": sum(1 for k in kinds if k is not None),
                "with_accommodation": kinds.count("accommodation"),
                "with_relocation_support": kinds.count("relocation_support"),
-               "filters": {k: v for k, v in filters.items() if k not in LIVE_BASE}}
+               "filters": {k: v for k, v in filters.items() if k not in LIVE_BASE} | ({"size": size} if size else {})}
     if town:
         counted["town"] = _town_said(town)
     return counted
+
+
+@mcp.tool()
+def resolve_city(text: str) -> dict:
+    """Which real municipality does a free text name, and is it big or small? Use it for a candidate's word
+    for a place ("Munich", "bei Füssen", "irgendwo im Allgäu", a clinic's name) before you answer about a
+    town the board listing does not show, or to check what size a place is. A model reads the text (it can
+    tell 'Furth im Wald' from Fürth) -- the answer is {municipalities: [{name, size, board_spellings,
+    postings}]}: size is "big" (50,000 inhabitants or more) or "small"; board_spellings are the strings the
+    board itself uses for that municipality; postings counts its open live-verified postings. An empty
+    list means the text names no municipality (a region, a state). The first call after a board refresh may
+    take a while."""
+    _log_call("resolve_city", {"text": text})
+    if not text.strip():
+        raise ToolError("resolve_city needs a text. Internal tool note, never quote it to the candidate.")
+    try:
+        named = CR.canonical_cities([text])[text]
+    except CR.CityResolveError as exc:
+        raise ToolError(f"the text could not be read ({exc}). Internal tool note, never quote it to the "
+                        f"candidate.") from exc
+    all_rows = D.jobs()
+    canon_all = _canon_of(all_rows)
+    live_ids = {r.get("posting_id") for r in D.filter_jobs(dict(LIVE_BASE))}
+    out = []
+    for name in named:
+        key = name.casefold()
+        strings = sorted(s for s, ms in canon_all.items() if key in {m.casefold() for m in ms})
+        postings = sum(1 for r in all_rows if r.get("posting_id") in live_ids
+                       and key in {m.casefold() for m in canon_all.get(D.town_of(r), [])})
+        out.append({"name": name, "size": "big" if CR.is_big([name]) else "small",
+                    "board_spellings": strings, "postings": postings})
+    return {"asked": text, "municipalities": out}
 
 
 @mcp.tool()

@@ -109,6 +109,8 @@ MCP_TOOL_NAMES = tuple(f"mcp__{MCP_SERVER_NAME}__{t}" for t in
                        ("search_postings", "get_posting", "list_clinics",
                         "search_postings_with_housing", "list_clinics_with_housing",
                         "list_cities_with_postings", "count_postings",
+                        # Ivan 2026-10-08: a Haiku subturn names the municipality a free text means.
+                        "resolve_city",
                         # TASK-374: ranks the board against this thread's stored CV. Needs the thread's
                         # number to find that CV, which is why _mcp_config_path passes WA_LUNA_PHONE.
                         "match_cv_to_postings",
