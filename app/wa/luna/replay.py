@@ -89,6 +89,12 @@ nothing copied) and run through ``api._ingest_media``, the function a live media
 real ``read_and_classify``, card slots updated the same way, ``_documents_just_received`` set. The brain
 then gets the turn text a live media message gets: nothing (``""``) for an attached file, the file's
 placeholder otherwise. A file that fails to read or classify raises (the capture is not a seed then).
+SUBSTITUTES. ``substitute_files`` ``{"cv_attachment_id", "qualification_attachment_id"}`` (donor rows of
+``candidate_attachments``, an eval-input edit) gives every file row that is unavailable for
+``not_on_a_readable_root`` (never a readable one, a voice note or a missing row) a donor, in history order, cycling
+cv, qualification, cv, ...;
+the entry says ``found_via: "substitute"``, ``substitute_kind``, ``substitute_attachment_id``. The donor goes
+through the same read, sha256 check and ``_ingest_media``; an unreadable donor raises. Needs ``media_roots``.
 Without ``media_roots`` nothing of this happens (placeholders, as before). With roots but without a seed, a
 chosen turn that holds a readable file is a loud error: the file must go through a capture.
 
@@ -157,7 +163,9 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import itertools
 import json
+import mimetypes
 import pathlib
 import sqlite3
 import subprocess
@@ -300,10 +308,25 @@ def _file_entry(row, status, reason=None, found_via=None):
             "found_via": found_via, "document_id": None, "document_type": None, "certificate_level": None}
 
 
-def _locate_row_file(row, sales_brain_path, media_roots):
+def _resolve_on_roots(att, sales_brain_path, roots):
+    """-> (path, via) of an attachment row's file under ``roots`` (own path, else another row with the same
+    sha256), or (None, None)."""
+    path = resolve_path(att["storage_path"], roots)
+    if path is not None:
+        return path, "own_path"
+    for alt in fetch_attachments_by_sha(att["sha256"], sales_brain_path, att["id"]):
+        path = resolve_path(alt["storage_path"], roots)
+        if path is not None:
+            return path, "same_sha256"
+    return None, None
+
+
+def _locate_row_file(row, sales_brain_path, media_roots, substitutes=None):
     """-> (entry, located). ``located`` is {path, sha256, mime_type} when a readable file exists (entry status
     ``found``, which the caller turns into ``attached`` or ``not_read``), else None with an ``unavailable``
-    entry that says why. Opens nothing but the attachment tables, read-only."""
+    entry that says why. Opens nothing but the attachment tables, read-only. ``substitutes`` ({source row id:
+    (kind, donor attachment id)}, SUBSTITUTES) swaps in the donor file for a row that is unavailable only
+    because of ``not_on_a_readable_root``; a donor that cannot be read raises."""
     if row["message_type"] == "audio":
         return _file_entry(row, "unavailable", "voice_note_not_transcribed"), None
     if row["attachment_id"] is None:
@@ -314,17 +337,51 @@ def _locate_row_file(row, sales_brain_path, media_roots):
     if (att["mime_type"] or "").strip().lower().startswith("audio/"):
         return _file_entry(row, "unavailable", "voice_note_not_transcribed"), None
     roots = [pathlib.Path(r).resolve() for r in media_roots]
-    path, via = resolve_path(att["storage_path"], roots), "own_path"
-    if path is None:
-        for alt in fetch_attachments_by_sha(att["sha256"], sales_brain_path, att["id"]):
-            path = resolve_path(alt["storage_path"], roots)
-            if path is not None:
-                via = "same_sha256"
-                break
+    path, via = _resolve_on_roots(att, sales_brain_path, roots)
+    if path is None and substitutes and row["id"] in substitutes:
+        kind, donor_id = substitutes[row["id"]]
+        donor = fetch_attachment(donor_id, sales_brain_path)
+        dpath, _ = _resolve_on_roots(donor, sales_brain_path, roots) if donor else (None, None)
+        if dpath is None:
+            raise RuntimeError(f"substitute {kind} (attachment {donor_id}) for source row {row['id']} cannot be "
+                               f"read: no such attachment row or its file is not on a readable root")
+        entry = _file_entry(row, "found", found_via="substitute")
+        entry.update(substitute_kind=kind, substitute_attachment_id=donor_id)
+        # The donor bytes go through the media path as THEIR kind and extension, not the source row's: a donor PDF
+        # under a source row that was a .jpg image would otherwise be routed to the vision reader by the wrong name.
+        dmime = (donor["mime_type"] or "").strip().lower()
+        dkind = "image" if dmime.startswith("image/") else "document"
+        dfile = None if dkind == "image" else "substitute" + (mimetypes.guess_extension(dmime) or "")
+        return entry, {"path": dpath, "sha256": donor["sha256"], "mime_type": donor["mime_type"],
+                       "kind": dkind, "filename": dfile}
     if path is None:
         return _file_entry(row, "unavailable", "not_on_a_readable_root"), None
     return _file_entry(row, "found", found_via=via), {"path": path, "sha256": att["sha256"],
                                                       "mime_type": att["mime_type"]}
+
+
+SUBSTITUTE_KEYS = {"cv_attachment_id": "cv", "qualification_attachment_id": "qualification"}
+
+
+def _plan_substitutes(rows, substitute_files, sales_brain_path, media_roots):
+    """SUBSTITUTES: -> {source row id: (kind, donor attachment id)}. The file rows that are unavailable only
+    for ``not_on_a_readable_root`` get the donors in history order, cycling (cv, qualification, cv, ...): a chat
+    that sent many files has the bot able to open every one of them from history. Decided from the whole history,
+    so the capture walk and every run walk agree."""
+    if set(substitute_files) != set(SUBSTITUTE_KEYS):
+        raise ValueError(f"substitute_files must be exactly {sorted(SUBSTITUTE_KEYS)}, got {sorted(substitute_files)}")
+    if media_roots is None:
+        raise ValueError("substitute_files needs media_roots (a list of directories to read files from)")
+    donors = itertools.cycle([(SUBSTITUTE_KEYS[k], substitute_files[k]) for k in SUBSTITUTE_KEYS])
+    plan = {}
+    for row in rows:
+        if not _wants_file_entry(row):
+            continue
+        entry, _ = _locate_row_file(row, sales_brain_path, media_roots)
+        if entry["reason"] != "not_on_a_readable_root":
+            continue
+        plan[row["id"]] = next(donors)
+    return plan
 
 
 def _ingest_file(conn, t, candidate_id, row, located, entry):
@@ -340,12 +397,13 @@ def _ingest_file(conn, t, candidate_id, row, located, entry):
     # A live image message carries no filename (api: ``media.get("filename") or None``); the old system stored
     # every image as "<id>.bin". Handed on, that ".bin" became the vision temp file's extension, which the
     # CLI's Read tool rejects, so the photo read hung until the timeout. Images go in as the live path sees them.
-    filename = None if row["message_type"] == "image" else row["media_filename"]
-    doc_id = ST.record_document(conn, t["phone"], _wamid(candidate_id, row["id"]), None, row["message_type"],
+    kind = located.get("kind", row["message_type"])
+    filename = located["filename"] if "kind" in located else (None if kind == "image" else row["media_filename"])
+    doc_id = ST.record_document(conn, t["phone"], _wamid(candidate_id, row["id"]), None, kind,
                                 located["mime_type"], filename, str(located["path"]), sha256, len(blob))
     conn.execute("update wa_documents set received_at=? where id=?", (row["occurred_at"], doc_id))
     conn.commit()
-    WAPI._ingest_media(conn, t, {"kind": row["message_type"], "media_filename": filename},
+    WAPI._ingest_media(conn, t, {"kind": kind, "media_filename": filename},
                        {"id": doc_id, "blob": blob, "mime_type": located["mime_type"]})
     ST.save_thread(conn, t)   # as the live path does, before the reply turn
     summary = t["slots"]["documents"][-1]
@@ -533,13 +591,13 @@ def _seed_burst(burst, seed, turn_idx, candidate_id):
             m["turn_text"] = ""
 
 
-def _check_unseeded_files(burst, turn_idx, candidate_id, sales_brain_path, media_roots):
+def _check_unseeded_files(burst, turn_idx, candidate_id, sales_brain_path, media_roots, substitutes=None):
     """A chosen turn with no seed runs on placeholders; that is only honest for a file nobody can read. A
     readable one must go through a capture first (FILES): loud."""
     for m in burst:
         if not _wants_file_entry(m["row"]):
             continue
-        entry, located = _locate_row_file(m["row"], sales_brain_path, media_roots)
+        entry, located = _locate_row_file(m["row"], sales_brain_path, media_roots, substitutes)
         if located is not None:
             raise RuntimeError(f"turn {turn_idx} of candidate_id={candidate_id!r} holds a readable file (source "
                                f"row {m['row']['id']}) and has no seed: the file is read once, in a preparation "
@@ -556,12 +614,12 @@ def _file_fields(line, burst):
 
 
 def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=None, client=None, at_turns=None,
-                     capture_before=None, seeds=None, media_roots=None):
+                     capture_before=None, seeds=None, media_roots=None, substitute_files=None):
     """Replay one candidate's whole recorded history. -> {"candidate_id", "turns_run", "truncated",
     "errors", "jsonl_path", "sqlite_path"}, plus {"seeds", "git_sha", "model", "effort"} in capture mode.
     ``turns_run`` counts the turns walked; with ``at_turns`` the brain ran on the chosen ones only (AT TURNS),
     with ``capture_before`` on every one before the last chosen (CAPTURE AND SEEDS), ``seeds`` is the run side
-    of that and ``media_roots`` turns FILES on.
+    of that and ``media_roots`` turns FILES on; ``substitute_files`` is SUBSTITUTES.
 
     ``errors`` counts the turns whose JSONL line carries ``"error"``. The run never stops on one (it
     continues, as a real restart would); the caller must still be able to tell a clean run from a broken
@@ -592,6 +650,7 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
             raise ValueError("capture_before needs media_roots (a list of directories to read files from)")
     if seeds and not set(seeds) <= (at or frozenset()):
         raise ValueError(f"seeds for turns {sorted(set(seeds) - (at or frozenset()))} that are not in at_turns")
+    substitutes = _plan_substitutes(rows, substitute_files, sales_brain_path, media_roots) if substitute_files else None
     stop_after = max(at) if at else max_turns   # an empty ``at`` is a listing: no model turn, no early stop
     last_capture = max(capture) if capture else None
 
@@ -637,7 +696,7 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
             _apply_seed(conn, t, seeds[turn_idx])
             applied.add(turn_idx)
         elif media_roots is not None:
-            _check_unseeded_files(burst, turn_idx, candidate_id, sales_brain_path, media_roots)
+            _check_unseeded_files(burst, turn_idx, candidate_id, sales_brain_path, media_roots, substitutes)
         line = _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=client)
         _file_fields(line, burst)
         if "error" in line:
@@ -660,7 +719,7 @@ def replay_candidate(candidate_id, out_dir, max_turns=None, sales_brain_path=Non
                         "media_placeholder": was_placeholder and row["message_type"] in MEDIA_TYPES,
                         "wamid": _wamid(candidate_id, row["id"]), "turn_text": text, "file": None, "row": row}
                 if capture is not None and _wants_file_entry(row):
-                    entry, located = _locate_row_file(row, sales_brain_path, media_roots)
+                    entry, located = _locate_row_file(row, sales_brain_path, media_roots, substitutes)
                     if located is not None and t.get("stopped"):
                         entry.update(status="not_read", reason="thread_stopped")
                     elif located is not None:

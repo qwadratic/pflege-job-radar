@@ -204,6 +204,10 @@ def load_cases(cases_dir, flt=""):
         if not (isinstance(edits, list) and all(isinstance(e, dict) and set(e) == {"what", "from", "to"}
                                                 and all(isinstance(v, str) for v in e.values()) for e in edits)):
             problems.append('edits must be a list of {"what": str, "from": str, "to": str}')
+        sub = case.get("substitute_files")
+        if sub is not None and not (isinstance(sub, dict) and set(sub) == {"cv_attachment_id", "qualification_attachment_id"}
+                                    and all(type(v) is int for v in sub.values())):
+            problems.append('substitute_files must be {"cv_attachment_id": int, "qualification_attachment_id": int}')
         if case.get("id") in seen:
             problems.append("duplicate id")
         if problems:
@@ -258,6 +262,24 @@ def _history_before(sqlite_path, phone, line):
             for d, b, k in reversed(keep) if k not in NO_TURN_KINDS]
 
 
+def assign_donor_packs(cases, packs, log=print):
+    """SUBSTITUTES for every run: each case without its own ``substitute_files`` gets
+    ``packs[candidate_id % len(packs)]`` (a pack is {"cv_attachment_id", "qualification_attachment_id"}), logged.
+    Only a row that is unavailable for ``not_on_a_readable_root`` is ever replaced, so a candidate whose files
+    are readable is untouched. Explicit and recorded (``found_via: substitute``), never a silent fallback."""
+    ok = (isinstance(packs, list) and packs and all(
+        isinstance(p, dict) and set(p) == {"cv_attachment_id", "qualification_attachment_id"}
+        and all(type(v) is int for v in p.values()) for p in packs))
+    if not ok:
+        raise SystemExit('--donor-packs must be a non-empty JSON list of {"cv_attachment_id": int, '
+                         '"qualification_attachment_id": int}')
+    for case in cases:
+        if case.get("substitute_files") is None:
+            case["substitute_files"] = packs[case["candidate_id"] % len(packs)]
+            log(f"{case['id']}: donor pack {case['substitute_files']} (--donor-packs)")
+    return cases
+
+
 def check_media_roots(roots):
     """Every media root must be a directory this user can list: a root that is missing or unreadable would
     turn every file into a quiet 'unavailable'. -> the roots as paths."""
@@ -280,6 +302,11 @@ def _file_counts(lines):
     entries = [(l["turn"], f) for l in lines if "turn" in l for f in l.get("files") or []]
     bad = sorted({turn for turn, f in entries if f["status"] != "attached"})
     return sum(1 for _, f in entries if f["status"] == "attached"), sum(1 for _, f in entries if f["status"] != "attached"), bad
+
+
+def _substituted(lines):
+    """-> number of substituted files in the JSONL lines of one walk (SUBSTITUTES in replay.py)."""
+    return sum(1 for l in lines if "turn" in l for f in l.get("files") or [] if f.get("found_via") == "substitute")
 
 
 def _write_private(path, text):
@@ -313,10 +340,17 @@ def prepare_cases(cases, out_dir, prep_dir, sales_brain_path=None, make_client=N
     with isolation(app, out_dir / "scratch"):
         for candidate_id, group in by_candidate.items():
             union = sorted({n for case in group for n in case["at_turns"]})
+            if len({json.dumps(c.get("substitute_files"), sort_keys=True) for c in group}) > 1:
+                for case in group:
+                    log(f"{case['id']}: FAILED, not prepared: cases of candidate {candidate_id} disagree on "
+                        f"substitute_files (one capture walk serves them all)")
+                totals["failed_cases"] += len(group)
+                continue
             try:
                 result = app.RP.replay_candidate(
                     candidate_id, out_dir / "scratch" / "prepare" / str(candidate_id), capture_before=union,
                     sales_brain_path=sales_brain_path, media_roots=media_roots,
+                    substitute_files=group[0].get("substitute_files"),
                     client=make_client() if make_client else None)
                 lines = _read_jsonl(result["jsonl_path"])
             except (RuntimeError, ValueError, OSError, sqlite3.Error) as exc:
@@ -337,11 +371,13 @@ def prepare_cases(cases, out_dir, prep_dir, sales_brain_path=None, make_client=N
                 prep = {"case": case["id"], "candidate_id": candidate_id, "at_turns": case["at_turns"],
                         "git_sha": result["git_sha"], "model": result["model"], "effort": result["effort"],
                         "locked_templates": result["locked_templates"], "prepared_at": prepared_at, "files": files,
+                        "substitute_files": case.get("substitute_files"),
                         "points": {str(n): result["seeds"][n] for n in case["at_turns"]}}
                 _write_private(pathlib.Path(prep_dir) / f"{case['id']}.json",
                                json.dumps(prep, ensure_ascii=False, indent=1))
                 log(f"{case['id']}: prepared turns {case['at_turns']} (walk of {result['turns_run']} turn(s); files: "
                     f"{attached} attached, {unavailable} unavailable"
+                    + (f", {_substituted(lines)} substituted" if case.get("substitute_files") else "")
                     + (f", not attached at turns {bad_turns}" if bad_turns else "") + ")")
                 totals["prepared"] += 1
     return totals
@@ -363,6 +399,10 @@ def _load_preps(cases, out_dir, prep_dir, sales_brain_path):
             continue
         prep = json.loads(path.read_text(encoding="utf-8"))
         gap = sorted(set(case["at_turns"]) - {int(n) for n in prep.get("points", {})})
+        if prep.get("substitute_files") != case.get("substitute_files"):
+            problems.append(f"{case['id']}: {path} was prepared with substitute_files={prep.get('substitute_files')}; "
+                            f"the case has {case.get('substitute_files')}")
+            continue
         if prep.get("candidate_id") != case["candidate_id"] or gap:
             problems.append(f"{case['id']}: {path} was prepared for candidate_id={prep.get('candidate_id')} and turns "
                             f"{sorted(int(n) for n in prep.get('points', {}))}; the case wants "
@@ -398,6 +438,8 @@ def run_cases(cases, out_dir, runs, sales_brain_path=None, make_client=None, log
             if prep:
                 log(f"{case['id']}: prep from git {prep['git_sha'][:10]}, {prep['model']}/{prep['effort']}, "
                     f"locked_templates={prep.get('locked_templates', 'not recorded')}, prepared {prep['prepared_at']}")
+            if case.get("substitute_files"):
+                log(f"{case['id']}: substitute_files {case['substitute_files']} (donor attachment ids)")
             for e in case.get("edits", []):
                 log(f"{case['id']}: edit {scrub(e['what'])}: {scrub(e['from'])} -> {scrub(e['to'])}")
             try:
@@ -406,6 +448,7 @@ def run_cases(cases, out_dir, runs, sales_brain_path=None, make_client=None, log
                     result = app.RP.replay_candidate(case["candidate_id"], run_dir, at_turns=case["at_turns"],
                                                      sales_brain_path=sales_brain_path, seeds=seeds,
                                                      media_roots=media_roots,
+                                                     substitute_files=case.get("substitute_files"),
                                                      client=make_client() if make_client else None)
                     for line in _read_jsonl(result["jsonl_path"]):
                         if "turn" not in line or line.get("skipped_reason") == "not_in_at_turns":
@@ -432,7 +475,8 @@ def run_cases(cases, out_dir, runs, sales_brain_path=None, make_client=None, log
                 for r in records:
                     fh.write(json.dumps(r, ensure_ascii=False) + "\n")
             meta = {k: case[k] for k in ("id", "candidate_id", "covers", "region")} | {
-                "note": case.get("note", ""), "edits": case.get("edits", [])}
+                "note": case.get("note", ""), "edits": case.get("edits", [])} | (
+                {"substitute_files": case["substitute_files"]} if case.get("substitute_files") else {})
             (out_dir / f"{case['id']}.points.json").write_text(
                 json.dumps({**meta, "points": points}, ensure_ascii=False, indent=1), encoding="utf-8")
             for r in records:
@@ -705,6 +749,8 @@ def build_parser():
     p.add_argument("--prepare", action="store_true",
                    help="one-time per case: run the real brain on the earlier turns and read the real files, "
                         "store the card as DIR/prep/<case>.json (needs --cases, --out, --sales-brain)")
+    p.add_argument("--donor-packs", dest="donor_packs", metavar="FILE",
+                   help="JSON list of donor packs; every case without its own substitute_files gets one (SUBSTITUTES)")
     p.add_argument("--media-root", dest="media_root", action="append", metavar="DIR",
                    help="directory of the CRM's WhatsApp files, read-only (repeatable; default "
                         f"{DEFAULT_MEDIA_ROOTS[0]})")
@@ -761,6 +807,9 @@ def main(argv=None, cli=None, make_client=None, prepared_at=None):
                                               else "results.json and judge_key.json") + f" in {judge_dir}")
         return 1 if results["judge_errors"] else 0
     cases = load_cases(args.cases, args.filter)
+    if args.donor_packs:
+        check_outside_checkout(args.donor_packs, "--donor-packs")
+        assign_donor_packs(cases, json.loads(pathlib.Path(args.donor_packs).read_text(encoding="utf-8")))
     prep_dir = pathlib.Path(args.cases).resolve() / "prep"
     media_roots = check_media_roots(args.media_root or DEFAULT_MEDIA_ROOTS)
     if args.prepare:

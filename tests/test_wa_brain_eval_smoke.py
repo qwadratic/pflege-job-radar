@@ -311,3 +311,21 @@ def test_the_fixture_board_has_small_town_postings_with_and_without_housing():
     assert len(small) == 4 and {bool(j["enr_housing"]) for j in small} == {True, False}
     assert {c["town"] for c in clinics} >= {"Füssen", "Kempten (Allgäu)", "Landsberg am Lech"}
     assert len({c["clinic_id"] for c in clinics}) == len(clinics)
+
+
+def test_donor_packs_go_to_every_case_without_its_own_substitute_files_by_candidate_id():
+    packs = [{"cv_attachment_id": 1, "qualification_attachment_id": 2},
+             {"cv_attachment_id": 3, "qualification_attachment_id": 4}]
+    own = {"cv_attachment_id": 9, "qualification_attachment_id": 8}
+    cases = [{"id": "a", "candidate_id": 10}, {"id": "b", "candidate_id": 11},
+             {"id": "c", "candidate_id": 12, "substitute_files": own}]
+    lines = []
+    out = RUN.assign_donor_packs(cases, packs, log=lines.append)
+    assert [c["substitute_files"] for c in out] == [packs[0], packs[1], own]
+    assert len(lines) == 2 and "--donor-packs" in lines[0]
+
+
+@pytest.mark.parametrize("bad", [[], {}, [{"cv_attachment_id": 1}], [{"cv_attachment_id": True, "qualification_attachment_id": 2}]])
+def test_donor_packs_reject_a_malformed_list_loudly(bad):
+    with pytest.raises(SystemExit):
+        RUN.assign_donor_packs([{"id": "a", "candidate_id": 1}], bad)

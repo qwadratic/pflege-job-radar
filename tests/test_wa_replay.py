@@ -1464,3 +1464,122 @@ def test_a_photo_stored_as_bin_is_read_with_the_mime_suffix_not_the_old_system_e
     RP.replay_candidate(cand, scratch_dir, capture_before={3}, media_roots=[root], sales_brain_path=db)
 
     assert readers.vision == [".jpg"]
+
+
+# --- substitute files for unreadable real files (FILES, SUBSTITUTES) ---------------------------------------------
+
+CERT_BYTES = "Urkunde. Staatliche Anerkennung als Pflegefachfrau.".encode("utf-8")
+SUBS = {"cv_attachment_id": 10, "qualification_attachment_id": 11}
+
+
+def _thread_with_three_files(tmp_path, cand=9050, real_ok=(), donors=True):
+    """Three document rows (turns 1-3), each answered; attachments 1-3 are the real files (on the root only when
+    their index is in ``real_ok``), 10 and 11 the donor CV and certificate."""
+    files = {}
+    files["d/cv.txt"] = CV_BYTES
+    files["d/cert.txt"] = CERT_BYTES
+    atts = []
+    rows = []
+    for n in (1, 2, 3):
+        blob = b"real file %d" % n
+        if n in real_ok:
+            files[f"r/{n}.txt"] = blob
+        atts.append({"id": n, "storage_path": f"r/{n}.txt", "sha256": _sha(blob), "mime_type": "text/plain"})
+        rows.append(_row(2 * n - 1, cand, "inbound", "document", f"2030-09-01T10:0{n}:00+00:00",
+                         media_filename=f"f{n}.txt", attachment_id=n))
+        rows.append(_row(2 * n, cand, "outbound", "text", f"2030-09-01T10:0{n}:05+00:00", body="ok"))
+    if donors:
+        atts += [{"id": 10, "storage_path": "d/cv.txt", "sha256": _sha(CV_BYTES), "mime_type": "text/plain"},
+                 {"id": 11, "storage_path": "d/cert.txt", "sha256": _sha(CERT_BYTES), "mime_type": "text/plain"}]
+    return _media_root(tmp_path, files), _make_sales_brain(tmp_path / "sb.sqlite", rows, atts)
+
+
+def _file_entries(result):
+    return [f for l in map(json.loads, open(result["jsonl_path"], encoding="utf-8")) for f in l.get("files") or []]
+
+
+def test_substitutes_cycle_over_every_unavailable_row_in_history_order(
+        tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_three_files(tmp_path)
+    readers = _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    result = RP.replay_candidate(9050, scratch_dir, capture_before=[3], media_roots=[root], sales_brain_path=db,
+                                 substitute_files=SUBS)
+    e1, e2, e3 = _file_entries(result)
+    assert (e1["status"], e1["found_via"], e1["substitute_kind"], e1["substitute_attachment_id"]) == (
+        "attached", "substitute", "cv", 10)
+    assert (e2["status"], e2["found_via"], e2["substitute_kind"], e2["substitute_attachment_id"]) == (
+        "attached", "substitute", "qualification", 11)
+    assert (e3["status"], e3["found_via"], e3["substitute_kind"], e3["substitute_attachment_id"]) == (
+        "attached", "substitute", "cv", 10)
+    assert readers.classified == [CV_BYTES.decode("utf-8"), CERT_BYTES.decode("utf-8"), CV_BYTES.decode("utf-8")]
+    assert len(result["seeds"][3]["documents"]) == 3
+    assert "path" not in json.dumps(_file_entries(result)) and "d/cv.txt" not in json.dumps(_file_entries(result))
+
+
+def test_a_readable_real_file_is_never_replaced_and_does_not_use_up_a_substitute(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_three_files(tmp_path, real_ok=(1,))
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    result = RP.replay_candidate(9050, scratch_dir, capture_before=[3], media_roots=[root], sales_brain_path=db,
+                                 substitute_files=SUBS)
+    e1, e2, e3 = _file_entries(result)
+    assert (e1["found_via"], "substitute_kind" in e1) == ("own_path", False)
+    assert (e2["substitute_kind"], e3["substitute_kind"]) == ("cv", "qualification")
+
+
+def test_an_unreadable_donor_is_a_loud_error_not_a_fallback(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_three_files(tmp_path)
+    (root / "d" / "cv.txt").unlink()
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    with pytest.raises(RuntimeError, match="substitute.*attachment 10"):
+        RP.replay_candidate(9050, scratch_dir, capture_before=[3], media_roots=[root], sales_brain_path=db,
+                            substitute_files=SUBS)
+    root2, db2 = _thread_with_three_files(tmp_path / "b", donors=False)
+    with pytest.raises(RuntimeError, match="substitute.*attachment 10"):
+        RP.replay_candidate(9050, scratch_dir, capture_before=[3], media_roots=[root2], sales_brain_path=db2,
+                            substitute_files=SUBS)
+
+
+def test_the_run_walk_sees_the_same_substitution_as_the_capture_walk(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_three_files(tmp_path)
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    cap = RP.replay_candidate(9050, scratch_dir, capture_before=[3], media_roots=[root], sales_brain_path=db,
+                              substitute_files=SUBS)
+    run = RP.replay_candidate(9050, scratch_dir, at_turns=[3], seeds={3: cap["seeds"][3]}, media_roots=[root],
+                              sales_brain_path=db, substitute_files=SUBS)
+    assert [f.get("substitute_kind") for f in _file_entries(run)] == [f.get("substitute_kind") for f in _file_entries(cap)]
+    # an unseeded chosen turn holding a substituted file is as loud as one holding a readable file
+    with pytest.raises(RuntimeError, match="holds a readable file"):
+        RP.replay_candidate(9050, scratch_dir, at_turns=[2], media_roots=[root], sales_brain_path=db,
+                            substitute_files=SUBS)
+
+
+def test_substitutes_without_media_roots_are_a_loud_error(tmp_path, scratch_dir, monkeypatch):
+    root, db = _thread_with_three_files(tmp_path)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    with pytest.raises(ValueError, match="substitute_files needs media_roots"):
+        RP.replay_candidate(9050, scratch_dir, at_turns=[1], sales_brain_path=db, substitute_files=SUBS)
+
+
+def test_a_donor_is_read_as_its_own_kind_not_as_the_unreadable_source_row_that_it_stands_in_for(
+        tmp_path, scratch_dir, monkeypatch):
+    """The source row was a photo (the old system stored it as <id>.bin); the donor is a text document. Routed by
+    the source row, the donor bytes would go to the vision reader."""
+    root = _media_root(tmp_path, {"d/cv.txt": CV_BYTES, "d/cert.txt": CERT_BYTES})
+    rows = [_row(1, 9060, "inbound", "image", "2030-09-01T10:01:00+00:00", attachment_id=1),
+            _row(2, 9060, "outbound", "text", "2030-09-01T10:01:05+00:00", body="ok")]
+    atts = [{"id": 1, "storage_path": "r/1.bin", "sha256": _sha(b"photo"), "mime_type": "image/jpeg"},
+            {"id": 10, "storage_path": "d/cv.txt", "sha256": _sha(CV_BYTES), "mime_type": "text/plain"},
+            {"id": 11, "storage_path": "d/cert.txt", "sha256": _sha(CERT_BYTES), "mime_type": "text/plain"}]
+    db = _make_sales_brain(tmp_path / "sb.sqlite", rows, atts)
+    readers = _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    result = RP.replay_candidate(9060, scratch_dir, capture_before=[1], media_roots=[root], sales_brain_path=db,
+                                 substitute_files=SUBS)
+    (entry,) = _file_entries(result)
+    assert (entry["status"], entry["found_via"], entry["substitute_kind"]) == ("attached", "substitute", "cv")
+    assert readers.vision == []
+    assert readers.classified == [CV_BYTES.decode("utf-8")]

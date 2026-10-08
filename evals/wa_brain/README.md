@@ -77,6 +77,16 @@ line, `files` in the prep, a "file unavailable" note in the run log, `inbound_fi
 Voice notes are not transcribed here: the old system's transcript, if the CRM has one, is the text; without one it
 is an unavailable file.
 
+**Substitute files.** A case may carry `"substitute_files": {"cv_attachment_id": 10, "qualification_attachment_id": 11}`
+(donor rows of `candidate_attachments`, from another candidate): an eval-input edit like `edits`, recorded, never a
+fallback. Only rows unavailable for `not_on_a_readable_root` are touched (never a readable file, voice note or
+missing row): such rows get the CV, then the qualification, then the CV again, and so on in history order, so the bot can
+open any earlier file from history. `--donor-packs FILE` (JSON list of such objects, outside the checkout) gives every
+case without its own `substitute_files` the pack `packs[candidate_id % len(packs)]`, logged per case; use it on every
+run. The donor goes through the same sha256 check and live media path; an unreadable donor is an error. Entries say
+`found_via: "substitute"` plus `substitute_kind`/`substitute_attachment_id` (no name, path); the judge sees them as
+attached; the prepare log prints "N substituted"; `<id>.points.json` echoes the field. All cases of one candidate must agree.
+
 **A/B arms.** `WA_LUNA_LOCKED_TEMPLATES` (`app/wa/config.py`) picks the arm: `all` (default, today) or `exceptions` (the
 harness sends no locked out-of-scope-region text and no locked refusal; the model answers both itself). The
 environment is passed through unchanged, so run each arm with the same cases and prep and only the variable
