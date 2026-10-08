@@ -552,6 +552,16 @@ def test_prompt_document_ask_requires_both_and_re_asks_the_missing_one_every_tur
     assert "on every turn until both have arrived" in think7
 
 
+def test_converge_step_puts_our_unanswered_question_ahead_of_next_objective():
+    # Ivan, 2026-10-08: a file sent instead of an answer must not turn the next turn into the next gate (eval
+    # finding: Haiku thanked for the CV and asked the region question, dropping our open Defizitbescheid question).
+    think7 = next(s for s in LB.P.THINK_ORDER if s.startswith("7) CONVERGE"))
+    assert "OUR OPEN QUESTION COMES FIRST" in think7
+    assert "ask THAT question again, ahead of next_objective" in think7
+    assert "ask nothing new in the same turn" in think7
+    assert "advanced a different open gate" in think7
+
+
 # --- TASK-339: no either/or question a bare "ja" answers (Ivan's manual test 2026-09-13: "Urkunde
 # schon, oder noch im Anerkennungsverfahren (Defizitbescheid/Kenntnisprüfung)?" got "ja" twice).
 
