@@ -104,7 +104,7 @@ def test_sibling_is_skipped_when_the_harvested_run_actually_covers_its_town(hdb)
 
 
 def test_a_gzipped_run_file_is_read_like_a_plain_one(hdb):
-    """deploy/crontab gzips crawl_output/run_<id>.jsonl after 7 days and the .gz replaces the plain file."""
+    """deploy/crontab runs tools/compress_crawl_output.py daily: the .gz of a finished run replaces the plain file."""
     import gzip
     write_run_jsonl(8, [("Pflegefachkraft (m/w/d)", "Bstadt")])
     p = A.CRAWL_OUT / "run_8.jsonl"

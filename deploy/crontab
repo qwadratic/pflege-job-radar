@@ -6,6 +6,9 @@
 # Older rows live on only in crawl_output/run_<id>.jsonl. Nothing else touches the queue's size.
 0 12 * * 0 cd /home/exedev/repo && .venv/bin/python -m pflege_jobs.cli purge-inbox --days 4 >> data/purge_inbox.log 2>&1
 #
-# Weekly, Sunday 12:05 UTC: gzip the per-run dumps older than 7 days (~110 MB -> ~16 MB each). gzip replaces the file
-# and keeps every row; app/hunter.py and tools/task95_replay.py read the .gz. Files of the current week stay plain.
-5 12 * * 0 cd /home/exedev/repo && find crawl_output -name 'run_*.jsonl' -mtime +7 -exec gzip {} + >> data/purge_inbox.log 2>&1
+# Daily, 12:05 UTC (after the nightly pass and its verify): gzip the dump of every run that is finished (~110 MB -> ~16 MB
+# each, Ivan 2026-10-08: whatever is not read and can be compressed is compressed, always). tools/compress_crawl_output.py reads
+# crawl_runs, leaves running and queued runs plain, checks the .gz line for line before it replaces the file, deletes no row;
+# a run unknown to crawl_runs, an existing .gz or a failed read-back are printed as PROBLEM and exit 1. app/hunter.py and
+# tools/task95_replay.py read the .gz.
+5 12 * * * cd /home/exedev/repo && .venv/bin/python tools/compress_crawl_output.py --apply >> data/purge_inbox.log 2>&1
