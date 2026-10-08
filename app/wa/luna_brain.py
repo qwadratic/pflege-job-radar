@@ -65,6 +65,11 @@ log = logging.getLogger(__name__)
 
 MAX_BUBBLES = 2
 
+# Ivan, 2026-10-08: the payload carries the thread's last 10 messages every turn (recent_messages), as if the
+# session were truncated there. His window, not a safety cap: anything older is read_history's. The number lives
+# in prompts.py, where the READ_HISTORY rule tells it to the model.
+RECENT_MESSAGES_WINDOW = P.RECENT_MESSAGES_WINDOW
+
 # Explicit button-confirmed consent (TASK-333): the real reference system has this same rigor for
 # its own harder, named-clinic-submission gate (a tappable "Ja, ich bestätige"), never inferred
 # from free text. This harness has no named-submission step, but applies the same discipline to
@@ -1401,10 +1406,10 @@ def introduced(c, phone):
                for r in ST.messages_for(c, phone, direction="out") if r["kind"] in _FREEFORM_KINDS)
 
 
-def turn_context(c, t, turn_key):
-    """-> {outbound_since_last_turn, last_turn_at, reply_context, seen_through_id, last_outbound} for the
-    Luna turn answering inbound ``turn_key``. The caller (api.process_owed_turn, shadow_run) puts it on the
-    thread as ``turn_context``; turn() moves it into the payload.
+def turn_context(c, t, turn_key, also_in_text=()):
+    """-> {outbound_since_last_turn, last_turn_at, reply_context, seen_through_id, last_outbound,
+    recent_messages} for the Luna turn answering inbound ``turn_key``. The caller (api.process_owed_turn,
+    shadow_run) puts it on the thread as ``turn_context``; turn() moves it into the payload.
 
     outbound_since_last_turn: outbound rows after the card's LAST_TURN_KEY.seen_through_id that are not in
     its own_message_ids, oldest first, each with its latest ``delivery`` status; without a marker, every outbound
@@ -1422,7 +1427,14 @@ def turn_context(c, t, turn_key):
     Deliberately not filtered by the LAST_TURN_KEY marker the way outbound_since_last_turn is: the refusal
     classifier (app/wa/luna/refusal.py) needs the literal last thing the candidate actually read, whoever
     or whatever sent it, not only the events the model itself would not already remember from its own
-    resumed session."""
+    resumed session.
+
+    recent_messages (Ivan, 2026-10-08): the thread's last ``RECENT_MESSAGES_WINDOW`` messages before this
+    inbound, oldest first, both directions, as ``ST.history_view`` rows: the same query and formatter as the
+    read_history tool (``ST.history_page``), so soft-deleted rows, the operator inbox's messages and outbound
+    rows Meta reported undelivered are out, and the inbound itself is not repeated (it is ``latest_inbound``).
+    ``also_in_text``: wamids of further inbound rows whose text the turn already carries in ``latest_inbound``
+    (a replay burst, app/wa/luna/replay.py); the live turn answers one message, so it passes none."""
     phone, card = t["phone"], t.get("slots") or {}
     inbound = ST.message_by_wamid(c, turn_key)
     if inbound is None or inbound["direction"] != "in" or inbound["phone"] != phone:
@@ -1438,12 +1450,13 @@ def turn_context(c, t, turn_key):
         after_id, own = (_legacy_seen_through(c, phone) if card.get("_session_id") else 0), set()
     # A message Meta reported undelivered (latest status failed) never reached the candidate: not in the payload
     # (review 2026-09-14: a template failed with 131049, weeks later a spontaneous message was read as its answer).
-    outbound = [view for view in (_message_view(r, _delivery(c, r["wamid"]))
-                                  for r in ST.messages_for(c, phone, after_id=after_id, direction="out")
-                                  if r["id"] not in own and not _is_agent_note_message(r))
-                if (view["delivery"] or {}).get("status") != "failed"]
+    outbound = [_message_view(r, _delivery(c, r["wamid"]))
+                for r in ST.messages_for(c, phone, after_id=after_id, direction="out")
+                if r["id"] not in own and not _is_agent_note_message(r) and not ST.delivery_failed(c, r["wamid"])]
     campaign = card.get("campaign") or {}
-    campaign_delivery_failed = bool(campaign) and (_delivery(c, campaign.get("wamid")) or {}).get("status") == "failed"
+    campaign_delivery_failed = bool(campaign) and ST.delivery_failed(c, campaign.get("wamid"))
+    recent, _ = ST.history_page(c, phone, before_id=inbound["id"], limit=RECENT_MESSAGES_WINDOW,
+                                skip_wamids=also_in_text)
     meta = inbound["meta"]
     replies_to = None
     if meta.get("reply_to_wamid"):
@@ -1461,7 +1474,7 @@ def turn_context(c, t, turn_key):
     return {"outbound_since_last_turn": outbound, "last_turn_at": (marker or {}).get("at"),
             "reply_context": reply_context, "introduced": introduced(c, phone), "voice_note": "transcript" in meta,
             "campaign_delivery_failed": campaign_delivery_failed, "seen_through_id": ST.last_message_id(c, phone),
-            "last_outbound": last_outbound}
+            "last_outbound": last_outbound, "recent_messages": [ST.history_view(r) for r in recent]}
 
 
 def turn_marker(c, phone, luna_turn, action):
@@ -1477,7 +1490,9 @@ def turn_marker(c, phone, luna_turn, action):
 
 def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_just_received=(), context=None):
     """This turn's ground truth, not the conversation itself -- the resumed session already has
-    every earlier turn. latest_inbound is what the candidate just wrote; the rest is state that
+    every earlier turn, and recent_messages (Ivan, 2026-10-08) puts the thread's last ten in front of
+    the model on every turn regardless, session or not ([] without a context, e.g. a test calling turn()
+    directly). latest_inbound is what the candidate just wrote; the rest is state that
     can change independently of anything either side said (new postings, a code-enforced card
     correction from a prior turn), so it is resupplied fresh every time rather than trusted to
     the model's memory of an earlier turn. is_button_reply (TASK-333) tells the model whether THIS
@@ -1507,6 +1522,7 @@ def _user_payload(text, card, scoreboard, snapshot, button_id=None, documents_ju
         # A template quick-reply tap is reply_context.is_template_button, never a consent-style button reply.
         "is_button_reply": bool(button_id) and not button_id.startswith(TEMPLATE_BUTTON_PREFIX),
         "reply_context": context.get("reply_context"),
+        "recent_messages": context.get("recent_messages", []),
         "outbound_since_last_turn": context.get("outbound_since_last_turn", []),
         "last_turn_at": context.get("last_turn_at"),
         "fresh_session": card.get("_session_id") is None,

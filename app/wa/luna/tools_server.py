@@ -1288,29 +1288,29 @@ def _history_limit(value):
 
 @mcp.tool()
 def read_history(before_id: int | None = None, limit: int = 20) -> dict:
-    """Page this conversation's own history further back than the recent tail already in your
-    context -- call it when the candidate refers to something from an earlier day (yesterday, the
-    day before) that the current turn's context does not cover. Never call it to double-check
-    something already in front of you; the stored tail is already correct and current for that.
+    """Page this conversation's own history further back than recent_messages (the thread's newest
+    messages, already in your context) reaches, and list its attachments. Call it whenever the answer
+    depends on something that is not in front of you: an earlier day, a question of ours that scrolled
+    out of recent_messages, a file the candidate sent.
 
-    Returns messages oldest-first within the page, plus every stored attachment's metadata (id,
-    document_type, filename, received_at) for this phone. Call it again with before_id set to this
-    call's own "oldest_id" to keep paging further back; has_more tells you whether anything older
-    is left. A message or attachment marked forgotten never appears here, the same as everywhere
-    else -- treat that as if it was never sent, never mention a gap or a deletion."""
+    Returns messages oldest-first within the page, each {id, direction, kind, text, at} exactly as
+    recent_messages shows them, plus every stored attachment's metadata (id, document_type, filename,
+    received_at) for this phone. Without before_id the page ends at the newest message, which recent_messages
+    already holds: to read what is older, pass before_id = recent_messages[0].id, then this call's own
+    "oldest_id" to keep paging further back; has_more tells you whether anything older is left. A message or
+    attachment marked forgotten never appears here, the same as everywhere else -- treat that as if it was
+    never sent, never mention a gap or a deletion."""
     _log_call("read_history", {"before_id": before_id, "limit": limit})
     from .. import store as ST
 
     phone = _turn_phone()
     conn = ST.db()
     try:
-        messages, has_more = ST.messages_before(conn, phone, before_id=before_id,
-                                                limit=_history_limit(limit))
+        messages, has_more = ST.history_page(conn, phone, before_id=before_id, limit=_history_limit(limit))
         documents = ST.documents_for(conn, phone)
     finally:
         conn.close()
-    return {"messages": [{"id": m["id"], "direction": m["direction"], "body": m["body"], "at": m["at"]}
-                         for m in messages],
+    return {"messages": [ST.history_view(m) for m in messages],
             "has_more": has_more,
             "oldest_id": messages[0]["id"] if messages else None,
             "documents": [{"id": d["id"], "document_type": d.get("document_type"),

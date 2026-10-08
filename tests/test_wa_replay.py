@@ -107,7 +107,8 @@ def _fake_turn(bubbles=None, action="reply_now_conversational", stopped=False, c
                       "thread_phone": thread.get("phone"),
                       "session_id": (thread.get("slots") or {}).get("_session_id"),
                       "slots": json.loads(json.dumps(thread.get("slots") or {})),
-                      "outbound_since_last_turn": [m["text"] for m in ctx.get("outbound_since_last_turn", [])]})
+                      "outbound_since_last_turn": [m["text"] for m in ctx.get("outbound_since_last_turn", [])],
+                      "recent_messages": [(m["direction"], m["text"]) for m in ctx.get("recent_messages", [])]})
         card = dict(thread.get("slots") or {})
         card.pop("_documents_just_received", None)   # the real turn() consumes it on its own copy of the card
         card.update(card_patch or {})
@@ -800,6 +801,56 @@ def test_next_turn_sees_the_real_reply_never_lunas_predicted_bubble(tmp_path, sc
     assert fake.calls[1]["outbound_since_last_turn"] == ["Die echte Antwort"]
 
 
+def test_the_tail_of_a_turn_is_the_real_earlier_messages_both_directions_never_lunas_predicted_bubble(
+        tmp_path, scratch_dir, monkeypatch):
+    db = _make_sales_brain(tmp_path / "sb.sqlite", [
+        _row(1, 9018, "inbound", "text", "2030-08-01T10:00:00+00:00", body="Hallo"),
+        _row(2, 9018, "outbound", "text", "2030-08-01T10:00:05+00:00", body="Die echte Antwort"),
+        _row(3, 9018, "inbound", "text", "2030-08-01T10:00:10+00:00", body="Danke"),
+    ])
+    fake = _fake_turn(bubbles=["Lunas vorhergesagte Antwort"])
+    monkeypatch.setattr(LB, "turn", fake)
+    RP.replay_candidate(9018, scratch_dir, sales_brain_path=db)
+
+    assert fake.calls[0]["recent_messages"] == []
+    assert fake.calls[1]["recent_messages"] == [("in", "Hallo"), ("out", "Die echte Antwort")]
+
+
+def test_a_burst_is_in_the_turn_text_and_not_repeated_in_the_tail(tmp_path, scratch_dir, monkeypatch):
+    db = _make_sales_brain(tmp_path / "sb.sqlite", [
+        _row(1, 9019, "inbound", "text", "2030-08-01T10:00:00+00:00", body="eins"),
+        _row(2, 9019, "outbound", "text", "2030-08-01T10:00:05+00:00", body="ok 1"),
+        _row(3, 9019, "inbound", "text", "2030-08-01T10:00:10+00:00", body="zwei"),
+        _row(4, 9019, "inbound", "text", "2030-08-01T10:00:12+00:00", body="drei"),
+        _row(5, 9019, "outbound", "text", "2030-08-01T10:00:20+00:00", body="ok 2"),
+    ])
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    RP.replay_candidate(9019, scratch_dir, sales_brain_path=db)
+
+    assert [c["text"] for c in fake.calls] == ["eins", "zwei\ndrei"]
+    assert fake.calls[1]["recent_messages"] == [("in", "eins"), ("out", "ok 1")]
+
+
+def test_a_chosen_turn_sees_the_ten_messages_before_it_as_a_live_thread_would(tmp_path, scratch_dir, monkeypatch):
+    rows = []
+    for i in range(1, 13):                                   # six exchanges, then the chosen turn 7
+        rows.append(_row(2 * i - 1, 9020, "inbound", "text", f"2030-08-01T10:{i:02d}:00+00:00", body=f"frage {i}"))
+        rows.append(_row(2 * i, 9020, "outbound", "text", f"2030-08-01T10:{i:02d}:30+00:00", body=f"antwort {i}"))
+    rows = rows[:12] + [_row(100, 9020, "inbound", "text", "2030-08-01T11:00:00+00:00", body="und jetzt?")]
+    db = _make_sales_brain(tmp_path / "sb.sqlite", rows)
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+
+    RP.replay_candidate(9020, scratch_dir, at_turns=[7], sales_brain_path=db)
+
+    [call] = fake.calls
+    assert call["text"] == "und jetzt?"
+    assert call["recent_messages"] == [(d, t) for i in range(2, 7) for d, t in
+                                       (("in", f"frage {i}"), ("out", f"antwort {i}"))]
+    assert len(call["recent_messages"]) == 10                # frage 1 / antwort 1 are older: read_history's
+
+
 # --- truncated (only real pending work) --------------------------------------------------------------------
 
 def test_not_truncated_when_what_is_left_after_max_turns_drives_no_turn(tmp_path, scratch_dir, monkeypatch):
@@ -1120,6 +1171,27 @@ def test_seed_mode_makes_no_model_call_for_earlier_turns_applies_the_seed_and_ru
     conn.close()
     assert rows == seeds[3]["documents"]
     assert rows[0]["path"] == str(root / "c1" / "cv.txt")
+
+
+def test_a_prepared_point_sees_the_real_earlier_messages_as_its_tail_though_no_earlier_turn_ran(
+        tmp_path, scratch_dir, monkeypatch):
+    """The seed carries the card and the documents, never messages: the walk records every earlier real row, the
+    old system's replies included, so a prepared point sees the tail a live thread would hold there. A seed
+    prepared before recent_messages existed stays valid."""
+    root, db = _thread_with_file(tmp_path)
+    _FakeReaders(monkeypatch)
+    monkeypatch.setattr(LB, "turn", _fake_turn())
+    seeds = RP.replay_candidate(9040, scratch_dir, capture_before=[3], media_roots=[root],
+                                sales_brain_path=db)["seeds"]
+    assert "recent_messages" not in json.dumps(seeds)
+
+    fake = _fake_turn()
+    monkeypatch.setattr(LB, "turn", fake)
+    RP.replay_candidate(9040, scratch_dir, at_turns=[3], seeds=json.loads(json.dumps(seeds)), sales_brain_path=db)
+
+    [call] = fake.calls
+    assert call["recent_messages"] == [("in", "Hallo"), ("out", "Guten Tag"), ("in", "[document].txt"),
+                                       ("out", "Danke fürs CV")]
 
 
 def test_seed_of_a_file_turn_gives_the_brain_the_live_turn_text_and_the_just_received_marker(

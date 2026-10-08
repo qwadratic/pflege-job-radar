@@ -85,6 +85,12 @@ def test_eval_harness_runs_end_to_end_offline(tmp_path, monkeypatch):
     assert totals == {"records": 4, "errors": 0, "failed_cases": 0}                    # turns 2 and 3, two runs
     assert len(seen_payloads) == 4                                                     # turn 1 was plain history
     assert [m["text"] for m in seen_payloads[0]["outbound_since_last_turn"]] == ["Guten Tag, in welcher Region?"]
+    # the prepared point sees the tail a live thread would hold: the earlier real messages, the old bot's replies
+    # among them, never the inbound it answers
+    assert [(m["direction"], m["text"]) for m in seen_payloads[0]["recent_messages"]][1:] == [
+        ("out", "Guten Tag, in welcher Region?")]
+    assert [(m["direction"], m["text"]) for m in seen_payloads[1]["recent_messages"]][1:] == [
+        ("out", "Guten Tag, in welcher Region?"), ("in", "Bayern"), ("out", "Haben Sie die Urkunde?")]
     records = [json.loads(l) for l in (out / "example.jsonl").read_text(encoding="utf-8").splitlines()]
     assert {(r["turn"], r["run"]) for r in records} == {(2, 1), (2, 2), (3, 1), (3, 2)}
     assert records[0]["bubbles"] == ["Verstanden, danke."] and records[0]["git_sha"].startswith("0123")

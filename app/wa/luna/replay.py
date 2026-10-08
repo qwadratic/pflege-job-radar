@@ -41,6 +41,13 @@ way it does there: ``outbound_since_last_turn``/``last_turn_at``/``introduced`` 
 over the scratch DB. Luna's own predicted bubbles never enter the scratch DB or a later turn: turn N+1
 sees the REAL outbound that followed turn N, as if a colleague (or the old bot) had answered.
 
+RECENT MESSAGES. The payload's ``recent_messages`` (the thread's last 10 messages, Ivan 2026-10-08) is read from
+the same scratch DB, which the walk fills with EVERY earlier row of the thread, inbound and the old system's
+outbound replies, with their historical ``occurred_at``: a prepared point (``seeds``) and a plain run alike see
+the tail a live thread would hold at that moment. Nothing about it is in a seed (a seed is the card and the
+documents), so a seed prepared before ``recent_messages`` existed stays valid. A burst's earlier inbound rows
+are in the turn's text already and are left out of the tail (``turn_context`` ``also_in_text``).
+
 AT TURNS. ``at_turns`` (a list of 1-based turn numbers, as ``--list-turns``-style listings count them:
 a listing is ``at_turns=[]``) runs the brain ONLY on those turns. Every other turn is recorded as plain
 history, inbound rows and the real reply rows exactly as the full replay records them, with NO model
@@ -464,7 +471,8 @@ def _run_turn(conn, t, candidate_id, turn_idx, burst, git_sha, client=None):
     text = "\n".join(m["turn_text"] for m in burst if m["turn_text"])
     turn_key = burst[-1]["wamid"]
     try:
-        t["turn_context"] = LB.turn_context(conn, t, turn_key)
+        # The burst's earlier inbound rows are already in ``text``: not repeated in recent_messages.
+        t["turn_context"] = LB.turn_context(conn, t, turn_key, also_in_text=[m["wamid"] for m in burst[:-1]])
         d = LB.turn(text, t, button_id=None, client=client, no_send=True)
     except Exception as exc:
         line["error"] = f"{type(exc).__name__}: {exc}"

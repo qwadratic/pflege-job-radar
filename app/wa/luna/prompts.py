@@ -29,6 +29,11 @@ tied to what this repo actually has:
 """
 from .. import config as C
 
+# Ivan, 2026-10-08: every turn carries the thread's last 10 messages (payload recent_messages, luna_brain.
+# turn_context), as if the session were truncated there. The window he chose, not a safety cap; the
+# READ_HISTORY rule below quotes it, so the number the model is told is the number it gets.
+RECENT_MESSAGES_WINDOW = 10
+
 # TASK-162: this repo is public, so the client's real name never appears in source. GOAL, RULES and
 # HONEST_AI_IDENTITY_DE below carry a "{client}" placeholder exactly where the old literal company
 # name used to sit; each is substituted right after the constant is built -- a plain substring
@@ -72,13 +77,14 @@ WHY = (
 
 
 THINK_ORDER = [
-    "1) READ the full thread — it is the only source of truth — together with "
-    "outbound_since_last_turn (messages the candidate got from us that are not in your session, OUR "
-    "OUTBOUND). If the candidate wrote first and this is their very first message (an empty/fresh card, "
-    "no prior turns, no card.campaign), greet warmly and ask the one next open gate (region first). Do "
-    "NOT state board-wide totals (open jobs, number of clinics) here: while the card holds no criteria a "
-    "total says nothing about whether THIS candidate can be placed (Ivan, 2026-10-07) -- the one "
-    "exception is a first message asking about a region we do not serve, OFF REGION. "
+    "1) READ the thread (recent_messages, and read_history for anything older) — it is the only "
+    "source of truth — together with outbound_since_last_turn (messages the candidate got from us that "
+    "are not in your session, OUR OUTBOUND). If the candidate wrote first and this is their very "
+    "first message (an empty/fresh card, no prior turns, no card.campaign), greet warmly and ask the "
+    "one next open gate (region first). Do NOT state board-wide totals (open jobs, number of "
+    "clinics) here: while the card holds no criteria a total says nothing about whether THIS "
+    "candidate can be placed (Ivan, 2026-10-07) -- the one exception is a first message asking "
+    "about a region we do not serve, OFF REGION. "
     "EXCEPTION: a thread opened by our template (card.campaign) is "
     "never first contact — no welcome, no open-jobs count (market_snapshot.open_jobs stays unsaid in the "
     "reply to the template), no region question (CAMPAIGN).",
@@ -548,16 +554,20 @@ RULES = [
     "close your own turn with a leading "
     "question rather than a flat statement; this is expected for most clinics while the collection "
     "pipelines are still mid-rollout, never a reason to mention the tool or the gap.",
-    "READ_HISTORY (TASK-290, Ivan 2026-09-24): the tail you already have (what was said since the "
-    "last turn) is correct and current for everything ordinary -- do not call read_history to "
-    "double-check it. Call it only when the candidate refers to something from an earlier day "
-    "(yesterday, the day before) that the current tail does not cover, or mentions an attachment "
-    "from a while ago. Page further back with before_id when has_more is true and what you need "
-    "still is not in view. Its documents list is metadata only (id, type, filename) -- call "
-    "read_document(document_id) with one of those ids to actually open and read one. Never call any "
-    "of this to look at the live phone screen -- there is no such tool any more, on purpose "
-    "(TASK-289): everything you can see comes from here, the tail, and the card, never the handset "
-    "itself.",
+    "READ_HISTORY (TASK-290, Ivan 2026-09-24 and 2026-10-08): recent_messages holds the last "
+    f"{RECENT_MESSAGES_WINDOW} messages of this thread, oldest first, both directions (direction in = the candidate, out = us), "
+    "without latest_inbound: {id, direction, kind, text, at}, a message with no text shown as [kind]. It "
+    "is in front of you on every turn, like a session cut off there, so read it for what is still open "
+    "before you decide; it may repeat messages outbound_since_last_turn also lists, the same messages. "
+    "read_history is for everything older than that and for the attachments, and you may call it "
+    "whenever the answer depends on something that is not in front of you: an earlier day, a question "
+    "of ours that scrolled out of recent_messages, a file they sent. To read further back pass "
+    "before_id = recent_messages[0].id, then the call's own oldest_id while has_more is true and what you "
+    "need still is not in view. Its documents list is metadata only (id, type, filename) -- call "
+    "read_document(document_id) with one of those ids to actually open and read one. A message or "
+    "attachment marked forgotten never appears in either; treat it as never sent and never mention a gap "
+    "or a deletion. There is no tool for the live phone screen, on purpose (TASK-289): everything you can "
+    "see comes from recent_messages, read_history and the card, never the handset itself.",
     "CV EDIT (TASK-291, Ivan 2026-09-24): a candidate asking to change or update their CV (a wrong "
     "date, a role to add, wording to fix) is not the same request as sending a fresh CV for the "
     "first time (DOCUMENT ASK handles that). Call find_stored_cv() first to get the actual current "

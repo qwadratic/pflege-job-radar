@@ -1666,8 +1666,9 @@ def messages_for(c, phone, after_id=0, direction=None, include_deleted=False):
 def messages_before(c, phone, before_id=None, limit=20, include_deleted=False):
     """Up to ``limit`` of this phone's wa_messages rows older than ``before_id`` (the most recent
     ``limit`` overall when ``before_id`` is None), returned OLDEST FIRST within the page -- paging
-    further back than turn_context's own recent tail reaches (TASK-290), on the same deleted_at
-    filter as messages_for.
+    further back than the payload's recent_messages reaches (TASK-290), on the same deleted_at
+    filter as messages_for. The model-facing views go through ``history_page``, which also drops
+    undelivered outbound rows.
     -> (rows, has_more): has_more is True when at least one older row exists beyond this page.
 
     The operator inbox's own ack/completion messages are filtered out for the same reason
@@ -1686,6 +1687,45 @@ def messages_before(c, phone, before_id=None, limit=20, include_deleted=False):
     page = list(rows[:limit])
     page.reverse()
     return [_message_row(r) for r in page], has_more
+
+
+def delivery_failed(c, wamid):
+    """True when Meta's latest status for this message is ``failed``: it never reached the candidate, so
+    nothing the model reads may treat it as said (review 2026-09-14: a template failed with 131049, weeks
+    later a spontaneous message was read as its answer)."""
+    latest = latest_message_status(c, wamid) if wamid else None
+    return latest is not None and latest["status"] == "failed"
+
+
+def history_page(c, phone, before_id=None, limit=20, skip_wamids=()):
+    """The thread as the model reads it: ``messages_before`` (soft-deleted rows and the operator inbox's own
+    messages already out) minus the outbound rows whose delivery failed and minus ``skip_wamids``; the page
+    is refilled from further back until it holds ``limit`` rows or the thread starts.
+    -> (rows oldest first, has_more): has_more is True when at least one more such row exists beyond the page.
+
+    Both model views of the thread are this one function: the payload's ``recent_messages`` (luna_brain.
+    turn_context) and the ``read_history`` tool (tools_server), so they cannot disagree."""
+    kept, cursor, skip = [], before_id, set(skip_wamids)
+    while True:
+        rows, has_more = messages_before(c, phone, before_id=cursor, limit=limit)
+        for row in reversed(rows):
+            if row["wamid"] in skip or (row["direction"] == "out" and delivery_failed(c, row["wamid"])):
+                continue
+            if len(kept) == limit:
+                return kept[::-1], True
+            kept.append(row)
+        if not has_more:
+            return kept[::-1], False
+        cursor = rows[0]["id"]
+
+
+def history_view(row):
+    """One wa_messages row as the model reads it in ``history_page``'s two consumers: {id, direction ("in" the
+    candidate, "out" us), kind, text, at}. A row with no text (a file, an empty template body) reads as
+    ``[kind]`` -- never a file name. ``id`` is read_history's ``before_id`` cursor."""
+    body = row["body"] or ""
+    return {"id": row["id"], "direction": row["direction"], "kind": row["kind"],
+            "text": body if body.strip() else f"[{row['kind']}]", "at": row["at"]}
 
 
 def forget_message(c, wamid, at=None):
