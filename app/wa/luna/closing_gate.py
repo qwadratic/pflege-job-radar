@@ -51,16 +51,19 @@ and the close would never have been asked for. Do not reintroduce it without sol
 near the end is not a licence to skip the final question, it is the moment the final question
 matters most.
 
-Runs through the same `claude` CLI mechanism luna_brain.Client, refusal.py and agent_note_gate.py
-use (subprocess, `-p`, `--output-format json`, `--restricted --tools ""`), not a second way of
-calling a model. Stateless: no --session-id/--resume, and the candidate's history is never sent --
+TASK-457 (2026-10-09): the live call moved from the `claude` CLI mechanism luna_brain.Client,
+refusal.py and agent_note_gate.py use (subprocess, `-p`, `--output-format json`) to one stateless
+Jev decision over the outgoing bubbles (app/wa/luna/jev.py) -- the CLI arm survives as the
+comparison in evals/jev_gates/bench.py, and SYSTEM_PROMPT above is the reviewed original. Still
+stateless: no session, and the candidate's history is never sent --
 the payload is the outgoing bubbles and nothing else.
 """
 import json
 import logging
 
 from .. import config as C
-from .refusal import _extract_verdict_json, _run_cli
+from . import jev
+from .refusal import _extract_verdict_json
 
 log = logging.getLogger(__name__)
 
@@ -103,6 +106,23 @@ SYSTEM_PROMPT = (
     'Reply with ONLY this JSON object and nothing else: {"closes": true or false}'
 )
 
+# TASK-457: the same judgement, written as a Jev question (app/wa/luna/jev.py). The bubbles go
+# in the state, the policy stays here -- what counts as closing, and the old "when genuinely
+# unsure, answer true" bias, now expressed as a weigh-toward-closing on the probability.
+# SYSTEM_PROMPT above is kept: it is the record of the reviewed original and the comparison
+# arm of evals/jev_gates/bench.py.
+Jev_CLOSING_QUESTION = (
+    "The state contains the German WhatsApp bubbles the assistant is about to send, in order. "
+    "Does the LAST bubble close the turn? It closes when it hands the conversation back with "
+    "something concrete to do or answer (a direct question, a request for a document or photo, "
+    "a prompt to tap a button or reply with a word, a next step to confirm) OR when it "
+    "deliberately ends the conversation (warmly saying we cannot place them, accepting they "
+    "are not looking, or handing off to a human colleague). It does NOT close when it only "
+    "states, explains, apologises, thanks or promises and leaves the person nothing to "
+    "answer. Judge what the last sentence DOES, not how polite or long it is. Return the "
+    "probability it closes; when the bubble is an ambiguous mixture, weigh toward closing."
+)
+
 
 class Verdict:
     """``closes``: what the caller acts on. ``reason``: always set, for the caller to log -- "model"
@@ -123,11 +143,23 @@ class Verdict:
 
 
 def _live_transport(payload_text):
-    """Runs ``claude -p`` once, statelessly, with ``payload_text`` over stdin -- same reasoning as
-    refusal._live_transport. Returns the raw result text; raises RuntimeError on anything that is not
-    a usable answer. Every raise here is turned into Verdict(True, ...) by the caller."""
-    return _run_cli(payload_text, model=C.CLOSING_GATE_MODEL, timeout_sec=C.CLOSING_GATE_TIMEOUT_SEC,
-                    system_prompt=SYSTEM_PROMPT, what="closing gate")
+    """One stateless Jev decision over the outgoing bubbles (TASK-457; this used to be a
+    ``claude -p`` haiku subprocess -- the CLI arm of this transport survives as the comparison
+    in evals/jev_gates/bench.py). Returns the SAME raw-result-text shape the gate has always
+    parsed -- a JSON object string -- so closes_the_turn and its failure taxonomy are
+    untouched. Raises RuntimeError on anything that is not a usable answer; every raise is
+    turned into Verdict(True, ...) by the caller -- a failure sends the reply UNCHECKED
+    rather than holding a live candidate's turn."""
+    bubbles = json.loads(payload_text)["bubbles"]
+    decision = jev.decide(
+        {"bubbles": bubbles},
+        {"closes": {"type": "noul", "threshold": 0.5, "question": Jev_CLOSING_QUESTION}},
+        what="closing gate",
+    )
+    p = decision.get("closes")
+    if isinstance(p, bool) or not isinstance(p, (int, float)):
+        raise RuntimeError(f"jev closing answer carried no probability: {decision!r}")
+    return json.dumps({"closes": bool(p >= 0.5)})
 
 
 def closes_the_turn(bubbles, *, transport=None):

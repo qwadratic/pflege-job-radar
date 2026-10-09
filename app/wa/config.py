@@ -362,6 +362,22 @@ if CLOSING_GATE_TIMEOUT_SEC <= 0:
     raise RuntimeError(f"WA_CLOSING_GATE_TIMEOUT_SEC={CLOSING_GATE_TIMEOUT_SEC} must be a positive "
                        "number of seconds")
 
+# TASK-457 (Ivan, 2026-10-09): Jev (TypeSafe AI, via OpenRouter) takes over the two decision gates
+# from the Haiku CLI subprocesses (closing_gate.py -- every reply, refusal.py -- decline branch);
+# the Haiku tier keeps text generation (expose_shrink.py). A decision, not a conversation: one
+# POST, tens of ms, typed answers with probabilities, input-only billing -- see app/wa/luna/jev.py
+# for the contract. Unset key: the gates fail into their existing safe direction (send unchecked /
+# keep talking) and log ERROR -- loud in the logs, never a silent model swap.
+OPENROUTER_API_KEY = os.environ.get("WA_OPENROUTER_API_KEY", "").strip()
+JEV_MODEL = os.environ.get("WA_JEV_MODEL", "typesafe/jev-1.13").strip() or "typesafe/jev-1.13"
+_JEV_TIMEOUT_RAW = os.environ.get("WA_JEV_TIMEOUT_SEC", "5").strip() or "5"
+try:
+    JEV_TIMEOUT_SEC = float(_JEV_TIMEOUT_RAW)
+except ValueError:
+    raise RuntimeError(f"WA_JEV_TIMEOUT_SEC={_JEV_TIMEOUT_RAW!r} is not a number")
+if JEV_TIMEOUT_SEC <= 0:
+    raise RuntimeError(f"WA_JEV_TIMEOUT_SEC={JEV_TIMEOUT_SEC} must be a positive number of seconds")
+
 # Claude Code keys a resumable session by session id *and* the working directory it was started
 # in (session transcripts live under a path derived from cwd). Every luna turn for every phone
 # number must run from this exact directory, or `--resume <id>` from a later turn silently looks
@@ -546,6 +562,7 @@ def readiness():
     checks = {"access_token": bool(ACCESS_TOKEN), "app_secret": bool(APP_SECRET),
               "verify_token": bool(VERIFY_TOKEN), "phone_number_id": bool(PHONE_NUMBER_ID),
               "openai_api_key": bool(OPENAI_API_KEY),
+              "openrouter_api_key": bool(OPENROUTER_API_KEY),
               "bridge_url": bool(BRIDGE_URL), "bridge_token": bool(BRIDGE_TOKEN),
               "bridge_inbound_token": bool(BRIDGE_INBOUND_TOKEN)}
     out = {"checks": checks,
@@ -571,4 +588,5 @@ def readiness():
         out["luna_model"] = LUNA_MODEL
         out["luna_ready"] = bool(shutil.which(LUNA_CLAUDE_BIN))
         out["refusal_model"] = REFUSAL_MODEL
+        out["jev_model"] = JEV_MODEL
     return out

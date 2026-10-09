@@ -10,6 +10,7 @@
     "bridge_token": false,
     "bridge_url": false,
     "openai_api_key": false,
+    "openrouter_api_key": false,
     "phone_number_id": false,
     "verify_token": false
   },

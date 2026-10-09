@@ -60,6 +60,7 @@ import re
 import subprocess
 
 from .. import config as C
+from . import jev
 
 log = logging.getLogger(__name__)
 
@@ -152,14 +153,53 @@ def _run_cli(payload_text, *, model, timeout_sec, system_prompt, what):
     return result
 
 
+# TASK-457 (2026-10-09): the same judgement, written as a Jev question (app/wa/luna/jev.py). The
+# reply and our_last_message go in the state; the reviewed policy -- what counts as an unambiguous
+# refusal, and the TASK-386 distinction between a short negative ANSWERING a narrow FACT question
+# and one REFUSING an INTEREST/consent question -- stays here, in the question itself. The old
+# "if genuinely unsure, answer false" failure direction is expressed as: keep the probability
+# below the threshold when in doubt. SYSTEM_PROMPT above is kept: the record of the reviewed
+# original and the comparison arm of evals/jev_gates/bench.py.
+Jev_REFUSAL_QUESTION = (
+    "The state contains candidate_reply (the candidate's WhatsApp reply, in German or any other "
+    "language) and our_last_message (the WhatsApp text we ourselves sent this candidate right "
+    "before their reply, or null). Does candidate_reply unambiguously refuse to continue the "
+    "conversation -- a clear, final no to being contacted or offered a position at all ('kein "
+    "Interesse', 'nicht mehr', 'habe schon eine Stelle', a hard stop)? Anything that leaves the "
+    "door open even slightly is NOT one: a maybe, a deferral, a conditional yes, a request for "
+    "more information before deciding, or a question back. our_last_message, when not null, "
+    "decides exactly one distinction: was it requesting one FACT about the candidate themself "
+    "(do they hold a specific document, are they in a specific region or city, do they need "
+    "housing) -- then a short bare negative ('nein', 'nein danke') states that fact and is NOT a "
+    "refusal -- or was it about their INTEREST, willingness or consent to be contacted or "
+    "continue at all (any general opener or offer included) -- then the same short negative is "
+    "an unambiguous refusal. our_last_message null: a short negative alone has nothing to read "
+    "it against -- keep the probability low. Every other shape (a maybe, a deferral, a request, "
+    "a question back, anything longer than a bare short negative) is judged on its own merits "
+    "regardless of our_last_message. Return the probability it is an unambiguous refusal; when "
+    "in doubt, keep it low."
+)
+
+
 def _live_transport(payload_text):
-    """Runs ``claude -p`` once, statelessly, ``payload_text`` (the JSON envelope
-    ``is_unambiguous_refusal`` builds -- ``our_last_message``/``candidate_reply``) over stdin. Returns
-    the raw result text; raises RuntimeError on anything that is not a usable answer. Every raise here
-    is turned into Verdict(False, ...) by the caller, never left to propagate -- see the asymmetry in
-    the module docstring."""
-    return _run_cli(payload_text, model=C.REFUSAL_MODEL, timeout_sec=C.REFUSAL_TIMEOUT_SEC,
-                    system_prompt=SYSTEM_PROMPT, what="refusal classifier")
+    """One stateless Jev decision over the candidate's reply (TASK-457; this used to be a
+    ``claude -p`` haiku subprocess -- the CLI arm survives as the comparison in
+    evals/jev_gates/bench.py). ``payload_text`` is the same JSON envelope
+    ``is_unambiguous_refusal`` builds (``our_last_message``/``candidate_reply``) and goes into the
+    state unchanged. Returns the raw result text the gate has always parsed; raises RuntimeError
+    on anything that is not a usable answer. Every raise here is turned into Verdict(False, ...)
+    by the caller, never left to propagate -- keep talking; see the asymmetry in the module
+    docstring."""
+    state = json.loads(payload_text)
+    decision = jev.decide(
+        state,
+        {"unambiguous_refusal": {"type": "noul", "threshold": 0.5, "question": Jev_REFUSAL_QUESTION}},
+        what="refusal classifier",
+    )
+    p = decision.get("unambiguous_refusal")
+    if isinstance(p, bool) or not isinstance(p, (int, float)):
+        raise RuntimeError(f"jev refusal answer carried no probability: {decision!r}")
+    return json.dumps({"unambiguous_refusal": bool(p >= 0.5)})
 
 
 def _extract_verdict_json(text):
