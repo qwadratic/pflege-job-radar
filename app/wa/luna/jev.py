@@ -15,9 +15,9 @@ on the narrow stateless gates and never on the main turn: the main brain
 (luna_brain.Client) is a tool-using agent resumed across a card's session, which is a
 different shape of work (see tools_server.py).
 
-CONTRACT, mirroring refusal._run_cli on purpose. decide() returns the raw ``decision`` object
+CONTRACT, mirroring refusal._run_cli on purpose. decide() returns the raw ``answers`` object
 and raises DecisionError on anything that is not a usable answer: missing key, HTTP failure,
-a body without a decision. The caller (a gate's ``_live_transport``) converts that into the
+a body without answers. The caller (a gate's ``_live_transport``) converts that into the
 gate's own safe-direction Verdict -- closes=True send-unchecked / is_refusal=False keep-talking
 -- and logs it. This module never decides for itself what a failure means for the
 conversation, the same asymmetry both gates document.
@@ -31,7 +31,9 @@ from .. import config as C
 log = logging.getLogger(__name__)
 
 # The OpenRouter alpha endpoint that serves the TypeSafe decision models (probed 2026-10-09):
-# POST {model, state, questions} -> {"decision": {name: value}}. /v1/chat/completions does not
+# POST {model, state, questions} -> {"answers": {name: {"type": "noul", "noul": 0.92}}}. Each
+# question spec needs "type" ("noul" | "choice" | "score") and "instructions" (the policy, in
+# text); noul probabilities are read back under the "noul" key. /v1/chat/completions does not
 # know this model, so this is a constant of the API, not configurable plumbing.
 DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
 
@@ -44,15 +46,16 @@ class DecisionError(RuntimeError):
 def decide(state, questions, *, model=None, timeout_sec=None, transport=None, what="jev"):
     """One stateless Jev decision over ``state``.
 
-    ``questions`` maps decision names to their spec -- ``{"question": str, "type": "noul" |
-    "choice", "choices": [...], "threshold": float}`` -- passed to the API unchanged, so a
-    spec shape the API accepts later needs no client change. ``state`` is the compact context
-    the question may read; keep it small (Jev's window is 32k, and the gates' payloads are a
-    sentence each anyway).
+    ``questions`` maps decision names to their spec -- the gates use ``{"type": "noul",
+    "instructions": <the policy written into the text>}``; the 0.5 threshold is applied on the
+    gate side, not sent -- and passes it to the API unchanged, so a spec shape the API accepts
+    later (choice, score) needs no client change. ``state`` is the compact context the question
+    may read; keep it small (Jev's window is 32k, and the gates' payloads are a sentence each
+    anyway).
 
-    Returns the parsed ``decision`` object (name -> value: a float for noul, a
-    ``{"value", "confidence"}`` object for choice). Raises DecisionError on a missing key, an
-    HTTP failure, or a body without a usable decision; the caller turns every raise into its
+    Returns the parsed ``answers`` object (name -> answer; for noul, {"type": "noul",
+    "noul": 0.92} -- the probability is under ``noul``). Raises DecisionError on a missing key,
+    an HTTP failure, or a body without usable answers; the caller turns every raise into its
     own safe-direction verdict, never a propagation. ``transport`` is the HTTP seam tests
     inject: ``transport(url, payload, key, timeout) -> parsed JSON body`` -- the same
     ``_default_transport`` pattern app/wa/stt.py uses for its ASR call.
@@ -71,10 +74,10 @@ def decide(state, questions, *, model=None, timeout_sec=None, transport=None, wh
                             f"{str(exc)[:200]}") from exc
     if not isinstance(body, dict):
         raise DecisionError(f"{what}: Jev answer was not a JSON object: {str(body)[:200]!r}")
-    decision = body.get("decision")
-    if not isinstance(decision, dict) or not decision:
-        raise DecisionError(f"{what}: Jev answer carried no decision: {str(body)[:300]!r}")
-    return decision
+    answers = body.get("answers")
+    if not isinstance(answers, dict) or not answers:
+        raise DecisionError(f"{what}: Jev answer carried no usable answers: {str(body)[:300]!r}")
+    return answers
 
 
 def _live_post(url, payload, key, timeout):

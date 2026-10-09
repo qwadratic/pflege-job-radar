@@ -153,10 +153,11 @@ def _live_transport(payload_text):
     bubbles = json.loads(payload_text)["bubbles"]
     decision = jev.decide(
         {"bubbles": bubbles},
-        {"closes": {"type": "noul", "threshold": 0.5, "question": Jev_CLOSING_QUESTION}},
+        {"closes": {"type": "noul", "instructions": Jev_CLOSING_QUESTION}},
         what="closing gate",
     )
-    p = decision.get("closes")
+    ans = decision.get("closes")
+    p = ans.get("noul") if isinstance(ans, dict) else None
     if isinstance(p, bool) or not isinstance(p, (int, float)):
         raise RuntimeError(f"jev closing answer carried no probability: {decision!r}")
     return json.dumps({"closes": bool(p >= 0.5)})

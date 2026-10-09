@@ -193,10 +193,11 @@ def _live_transport(payload_text):
     state = json.loads(payload_text)
     decision = jev.decide(
         state,
-        {"unambiguous_refusal": {"type": "noul", "threshold": 0.5, "question": Jev_REFUSAL_QUESTION}},
+        {"unambiguous_refusal": {"type": "noul", "instructions": Jev_REFUSAL_QUESTION}},
         what="refusal classifier",
     )
-    p = decision.get("unambiguous_refusal")
+    ans = decision.get("unambiguous_refusal")
+    p = ans.get("noul") if isinstance(ans, dict) else None
     if isinstance(p, bool) or not isinstance(p, (int, float)):
         raise RuntimeError(f"jev refusal answer carried no probability: {decision!r}")
     return json.dumps({"unambiguous_refusal": bool(p >= 0.5)})

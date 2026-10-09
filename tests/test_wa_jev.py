@@ -32,17 +32,17 @@ def test_decide_posts_state_and_questions_and_returns_the_decision(monkeypatch):
 
     def transport(url, payload, key, timeout):
         seen.update(url=url, payload=payload, key=key, timeout=timeout)
-        return {"decision": {"is_refusal": 0.9}, "usage": {"input_tokens": 10}}
+        return {"answers": {"is_refusal": {"type": "noul", "noul": 0.9}}, "usage": {}}
 
     d = jev.decide(
         {"candidate_reply": "nein, danke"},
-        {"is_refusal": {"type": "noul", "threshold": 0.5, "question": "q?"}},
+        {"is_refusal": {"type": "noul", "instructions": "q?"}},
         transport=transport,
     )
-    assert d == {"is_refusal": 0.9}
+    assert d == {"is_refusal": {"type": "noul", "noul": 0.9}}
     assert seen["url"] == jev.DECISIONS_URL
     assert seen["payload"]["state"] == {"candidate_reply": "nein, danke"}
-    assert seen["payload"]["questions"]["is_refusal"]["question"] == "q?"
+    assert seen["payload"]["questions"]["is_refusal"]["instructions"] == "q?"
     assert seen["payload"]["model"] == C.JEV_MODEL
     assert seen["timeout"] == C.JEV_TIMEOUT_SEC
 
@@ -57,8 +57,8 @@ def test_decide_without_a_key_fails_loud_before_any_call(monkeypatch):
 
 
 @pytest.mark.parametrize("body", [
-    {"error": "nope"},       # no decision at all
-    {"decision": {}},        # empty decision
+    {"error": "nope"},       # no answers at all
+    {"answers": {}},         # empty answers
     "not-an-object",         # body is not a JSON object
 ])
 def test_decide_rejects_bodies_without_a_usable_decision(monkeypatch, body):
@@ -82,7 +82,7 @@ def test_decide_wraps_transport_failures_in_decision_error(monkeypatch):
 
 def _fake_decide(value):
     def decide(state, questions, **kw):
-        return {next(iter(questions)): value}
+        return {next(iter(questions)): {"type": "noul", "noul": value}}
     return decide
 
 
