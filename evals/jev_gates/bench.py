@@ -122,7 +122,7 @@ def bench(label, cases, old_fn, old_key, new_fn, new_key, repeats):
         ok = all(old_v == expected and new_v == expected for old_v, new_v, _, _ in results)
         if not ok:
             disagreements += 1
-        ex, ne = results[-1]
+        ex, ne, _, _ = results[-1]
         mark = "ok " if ok else "MIS"
         print(f"  [{mark}] {i}. {note}\n"
               f"       expected={expected}  old={ex[0]}  new={ne[1]}  "
