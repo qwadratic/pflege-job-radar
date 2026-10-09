@@ -125,7 +125,7 @@ def bench(label, cases, old_fn, old_key, new_fn, new_key, repeats):
         ex, ne, _, _ = results[-1]
         mark = "ok " if ok else "MIS"
         print(f"  [{mark}] {i}. {note}\n"
-              f"       expected={expected}  old={ex[0]}  new={ne[1]}  "
+              f"       expected={expected}  old={ex}  new={ne}  "
               f"over {repeats} repeats: "
               + ", ".join(f"o={a}/{b:.0f}ms j={c}/{d:.0f}ms" for a, c, b, d in results))
     def _pct(vals, p):
